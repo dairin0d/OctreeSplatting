@@ -148,13 +148,14 @@ namespace OctreeSplatting {
             startZ = TZ - extentZ;
             if (startZ < 0) return false;
             
+            int offsetZ = extentZ >> 1;
             int octant = 0;
             for (int z = -1; z <= 1; z += 2) {
                 for (int y = -1; y <= 1; y += 2) {
                     for (int x = -1; x <= 1; x += 2) {
                         deltas[octant].X = (XX * x + YX * y + ZX * z);
                         deltas[octant].Y = (XY * x + YY * y + ZY * z);
-                        deltas[octant].Z = (XZ * x + YZ * y + ZZ * z) + extentZ;
+                        deltas[octant].Z = (XZ * x + YZ * y + ZZ * z) + offsetZ;
                         ++octant;
                     }
                 }
