@@ -85,8 +85,9 @@ namespace OctreeSplatting.UnityDemo {
             }
             
             int camW = cam.pixelWidth, camH = cam.pixelHeight;
+            var timeInfo = $"{demoController.FrameTime} ({demoController.AverageFrameTime:0.0}) ms/frame";
             DrawBox(new Rect(0, 0, panelWidth, lineHeight*2));
-            GUI.Label(new Rect(x, y, panelWidth, lineHeight), $"{camW}x{camH}: {demoController.FrameTime} ({demoController.AverageFrameTime:0.0}) ms/frame");
+            GUI.Label(new Rect(x, y, panelWidth, lineHeight), $"{camW}x{camH}: {timeInfo}");
             y += lineHeight;
             GUI.Label(new Rect(x, y, panelWidth, lineHeight), demoController.ViewInfo);
             y += lineHeight;
