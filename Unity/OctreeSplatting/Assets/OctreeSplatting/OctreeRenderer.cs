@@ -3,7 +3,6 @@
 
 using System;
 using System.Numerics;
-using System.Runtime.CompilerServices;
 
 namespace OctreeSplatting {
     public class OctreeRenderer {
@@ -42,22 +41,54 @@ namespace OctreeSplatting {
         }
         
         private void Render(int nodeX, int nodeY, int nodeZ, uint address, int level) {
-            var boundingRect = CalculateScreenSpaceBoundaries(nodeX, nodeY, level);
+            var nodeExtentX = (extentX >> level) - SubpixelHalf;
+            var nodeExtentY = (extentY >> level) - SubpixelHalf;
             
-            var visibleRect = boundingRect.Intersection(Viewport);
+            var boundingRect = new Range2D {
+                MinX = (nodeX - nodeExtentX) >> SubpixelBits,
+                MinY = (nodeY - nodeExtentY) >> SubpixelBits,
+                MaxX = (nodeX + nodeExtentX) >> SubpixelBits,
+                MaxY = (nodeY + nodeExtentY) >> SubpixelBits,
+            };
             
-            if ((visibleRect.SizeX < 0) | (visibleRect.SizeY < 0)) return;
+            var visibleRect = new Range2D {
+                MinX = (boundingRect.MinX > Viewport.MinX ? boundingRect.MinX : Viewport.MinX),
+                MinY = (boundingRect.MinY > Viewport.MinY ? boundingRect.MinY : Viewport.MinY),
+                MaxX = (boundingRect.MaxX < Viewport.MaxX ? boundingRect.MaxX : Viewport.MaxX),
+                MaxY = (boundingRect.MaxY < Viewport.MaxY ? boundingRect.MaxY : Viewport.MaxY),
+            };
+            
+            if ((visibleRect.MaxX < visibleRect.MinX) | (visibleRect.MaxY < visibleRect.MinY)) return;
             
             var node = Octree[address];
             
-            var projectedSize = Math.Max(boundingRect.SizeX, boundingRect.SizeY);
+            var sizeX = boundingRect.MaxX - boundingRect.MinX;
+            var sizeY = boundingRect.MaxY - boundingRect.MinY;
+            var projectedSize = (sizeX > sizeY ? sizeX : sizeY);
             
             if ((node.Mask == 0) | (projectedSize < 1)) {
-                Draw(visibleRect, nodeZ, node);
+                for (int y = visibleRect.MinY; y <= visibleRect.MaxY; y++) {
+                    int index = visibleRect.MinX + (y * BufferStride);
+                    for (int x = visibleRect.MinX; x <= visibleRect.MaxX; x++, index++) {
+                        ref var pixel = ref Pixels[index];
+                        if (nodeZ < pixel.Depth) {
+                            pixel.Depth = nodeZ;
+                            pixel.Color24 = node.Data;
+                        }
+                    }
+                }
                 return;
             }
             
-            if (IsFullyOccluded(visibleRect, nodeZ)) return;
+            for (int y = visibleRect.MinY; y <= visibleRect.MaxY; y++) {
+                int index = visibleRect.MinX + (y * BufferStride);
+                for (int x = visibleRect.MinX; x <= visibleRect.MaxX; x++, index++) {
+                    ref var pixel = ref Pixels[index];
+                    if (nodeZ < pixel.Depth) goto OcclusionTestPassed;
+                }
+            }
+            return;
+            OcclusionTestPassed:;
             
             for (int i = 0; i < 8; i++) {
                 uint octant = (queue >> (i*4)) & 7;
@@ -73,45 +104,6 @@ namespace OctreeSplatting {
                 
                 Render(childX, childY, childZ, childAddress, level+1);
             }
-        }
-        
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private Range2D CalculateScreenSpaceBoundaries(int nodeX, int nodeY, int level) {
-            var nodeExtentX = (extentX >> level) - SubpixelHalf;
-            var nodeExtentY = (extentY >> level) - SubpixelHalf;
-            
-            return new Range2D {
-                MinX = (nodeX - nodeExtentX) >> SubpixelBits,
-                MinY = (nodeY - nodeExtentY) >> SubpixelBits,
-                MaxX = (nodeX + nodeExtentX) >> SubpixelBits,
-                MaxY = (nodeY + nodeExtentY) >> SubpixelBits,
-            };
-        }
-        
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private void Draw(Range2D rect, int nodeZ, OctreeNode node) {
-            for (int y = rect.MinY; y <= rect.MaxY; y++) {
-                int index = rect.MinX + (y * BufferStride);
-                for (int x = rect.MinX; x <= rect.MaxX; x++, index++) {
-                    ref var pixel = ref Pixels[index];
-                    if (nodeZ < pixel.Depth) {
-                        pixel.Depth = nodeZ;
-                        pixel.Color24 = node.Data;
-                    }
-                }
-            }
-        }
-        
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private bool IsFullyOccluded(Range2D rect, int nodeZ) {
-            for (int y = rect.MinY; y <= rect.MaxY; y++) {
-                int index = rect.MinX + (y * BufferStride);
-                for (int x = rect.MinX; x <= rect.MaxX; x++, index++) {
-                    ref var pixel = ref Pixels[index];
-                    if (nodeZ < pixel.Depth) return false;
-                }
-            }
-            return true;
         }
         
         private bool Setup() {
