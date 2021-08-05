@@ -16,7 +16,7 @@ namespace OctreeSplatting.Demo {
         
         private float zoomFactor = 0.125f;
         private int distanceSteps = 16;
-        private int zoomSteps = -8;
+        private int zoomSteps = -12;
         private float cameraPitch = -37;
         private float cameraYaw = -47;
         
@@ -168,7 +168,6 @@ namespace OctreeSplatting.Demo {
                 
                 CalculateScreenSpaceMatrix(in matrixMV, in matrixMVP,
                     projectionOffset, projectionScale, ref renderer.Matrix);
-                renderer.ObjectID = objectID;
                 renderer.Octree = octree;
                 renderer.RootAddress = 0;
                 

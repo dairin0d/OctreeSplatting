@@ -8,17 +8,13 @@ namespace OctreeSplatting {
         public int SizeX => MaxX - MinX;
         public int SizeY => MaxY - MinY;
         
-        public void Intersect(Range2D other) {
-            if (MinX < other.MinX) MinX = other.MinX;
-            if (MinY < other.MinY) MinY = other.MinY;
-            if (MaxX > other.MaxX) MaxX = other.MaxX;
-            if (MaxY > other.MaxY) MaxY = other.MaxY;
-        }
-        
         public Range2D Intersection(Range2D other) {
-            var copy = this;
-            copy.Intersect(other);
-            return copy;
+            return new Range2D {
+                MinX = (MinX > other.MinX ? MinX : other.MinX),
+                MinY = (MinY > other.MinY ? MinY : other.MinY),
+                MaxX = (MaxX < other.MaxX ? MaxX : other.MaxX),
+                MaxY = (MaxY < other.MaxY ? MaxY : other.MaxY),
+            };
         }
     }
 }
