@@ -55,7 +55,7 @@ namespace OctreeSplatting {
             
             if ((visibleBox.SizeX < 0) | (visibleBox.SizeY < 0)) return;
             
-            var projectedSize = Math.Min(boundingBox.SizeX, boundingBox.SizeY);
+            var projectedSize = Math.Max(boundingBox.SizeX, boundingBox.SizeY);
             
             var node = Octree[address];
             
