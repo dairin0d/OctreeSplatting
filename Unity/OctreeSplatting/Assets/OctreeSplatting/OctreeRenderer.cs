@@ -3,6 +3,7 @@
 
 using System;
 using System.Numerics;
+using System.Runtime.CompilerServices;
 
 namespace OctreeSplatting {
     public class OctreeRenderer {
@@ -74,6 +75,7 @@ namespace OctreeSplatting {
             }
         }
         
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private Range2D CalculateScreenSpaceBoundaries(int nodeX, int nodeY, int level) {
             var nodeExtentX = (extentX >> level) - SubpixelHalf;
             var nodeExtentY = (extentY >> level) - SubpixelHalf;
@@ -86,6 +88,7 @@ namespace OctreeSplatting {
             };
         }
         
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void Draw(Range2D rect, int nodeZ, OctreeNode node) {
             for (int y = rect.MinY; y <= rect.MaxY; y++) {
                 int index = rect.MinX + (y * BufferStride);
@@ -99,6 +102,7 @@ namespace OctreeSplatting {
             }
         }
         
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private bool IsFullyOccluded(Range2D rect, int nodeZ) {
             for (int y = rect.MinY; y <= rect.MaxY; y++) {
                 int index = rect.MinX + (y * BufferStride);
