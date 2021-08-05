@@ -100,7 +100,7 @@ namespace OctreeSplatting.OpenTKDemo {
             quad.Use();
             quad.Draw();
 
-            Title = $"{initialTitle}: {demoController.FrameTime} ms/frame; {demoController.ViewInfo}";
+            Title = $"{initialTitle}: {demoController.FrameTime} ({demoController.AverageFrameTime:0.0}) ms/frame; {demoController.ViewInfo}";
 
             SwapBuffers();
         }

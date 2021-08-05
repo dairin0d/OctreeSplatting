@@ -33,11 +33,14 @@ namespace OctreeSplatting.Demo {
         private OctreeSplatting.Renderbuffer renderbuffer;
 
         private System.Diagnostics.Stopwatch stopwatch = new System.Diagnostics.Stopwatch();
+        private double averageFrameTime;
+        private long frameCount;
 
         private OctreeSplatting.Color32 background = new OctreeSplatting.Color32 {R = 50, G = 80, B = 80, A = 255};
 
         public string ViewInfo => $"P={(int)cameraPitch}, Y={(int)cameraYaw}, Z={zoomSteps}";
         public int FrameTime => (int)stopwatch.ElapsedMilliseconds;
+        public double AverageFrameTime => averageFrameTime;
 
         public int Zoom {
             get => zoomSteps;
@@ -121,6 +124,9 @@ namespace OctreeSplatting.Demo {
             renderbuffer.End();
             
             stopwatch.Stop();
+            
+            frameCount++;
+            averageFrameTime = (averageFrameTime * (frameCount-1) + stopwatch.ElapsedMilliseconds) / frameCount;
         }
 
         private void DrawOctrees(Matrix4x4 viewMatrix, Matrix4x4 projectionMatrix) {
