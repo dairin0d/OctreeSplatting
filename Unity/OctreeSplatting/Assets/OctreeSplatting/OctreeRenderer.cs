@@ -179,7 +179,9 @@ namespace OctreeSplatting {
             gap = ZX + XX; if (gap > maxGap) maxGap = gap;
             gap = ZY + XY; if (gap > maxGap) maxGap = gap;
             
-            for (int maxLevel = 0; maxLevel <= 30; maxLevel++) {
+            int maxShift = 30 - SubpixelShift;
+            
+            for (int maxLevel = 0; maxLevel <= maxShift; maxLevel++) {
                 if (maxGap < (1 << maxLevel)) return maxLevel;
             }
             
