@@ -190,8 +190,6 @@ namespace OctreeSplatting {
             public StackItem* NodeStack;
             
             public void Render() {
-                int bufferStride = 1 << BufferShift;
-                
                 var stackTop = NodeStack;
                 
                 while (stackTop >= NodeStack) {
@@ -225,9 +223,8 @@ namespace OctreeSplatting {
                     var projectedSize = (sizeX > sizeY ? sizeX : sizeY);
                     
                     if ((node.Mask == 0) | (projectedSize < 1)) {
-                        int rowStart = visibleRect.MinX + (visibleRect.MinY << BufferShift);
-                        for (int y = visibleRect.MinY; y <= visibleRect.MaxY; y++, rowStart += bufferStride) {
-                            int index = rowStart;
+                        for (int y = visibleRect.MinY; y <= visibleRect.MaxY; y++) {
+                            int index = visibleRect.MinX + (y << BufferShift);
                             for (int x = visibleRect.MinX; x <= visibleRect.MaxX; x++, index++) {
                                 ref var pixel = ref Pixels[index];
                                 if (current.Z < pixel.Depth) {
@@ -240,9 +237,8 @@ namespace OctreeSplatting {
                     }
                     
                     {
-                        int rowStart = visibleRect.MinX + (visibleRect.MinY << BufferShift);
-                        for (int y = visibleRect.MinY; y <= visibleRect.MaxY; y++, rowStart += bufferStride) {
-                            int index = rowStart;
+                        for (int y = visibleRect.MinY; y <= visibleRect.MaxY; y++) {
+                            int index = visibleRect.MinX + (y << BufferShift);
                             for (int x = visibleRect.MinX; x <= visibleRect.MaxX; x++, index++) {
                                 ref var pixel = ref Pixels[index];
                                 if (current.Z < pixel.Depth) goto OcclusionTestPassed;
