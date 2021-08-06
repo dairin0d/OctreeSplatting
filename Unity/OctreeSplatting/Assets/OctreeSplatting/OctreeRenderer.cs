@@ -19,6 +19,7 @@ namespace OctreeSplatting {
         private const int SubpixelBits = 16;
         private const int SubpixelSize = 1 << SubpixelBits;
         private const int SubpixelHalf = SubpixelSize >> 1;
+        private const int MaxSubdivisions = 31 - SubpixelBits;
         
         // Viewport & renderbuffer info
         public Range2D Viewport;
@@ -32,9 +33,7 @@ namespace OctreeSplatting {
         
         private int extentX, extentY, extentZ;
         private int startX, startY, startZ;
-        private Delta[] deltas = new Delta[8];
         private uint queue;
-        private StackItem[] nodeStack = new StackItem[32 * 8];
         
         private int XX, XY, XZ;
         private int YX, YY, YZ;
@@ -44,7 +43,9 @@ namespace OctreeSplatting {
         public unsafe void Render() {
             if (!Setup()) return;
             
-            nodeStack[0] = new StackItem {
+            StackItem* nodeStackPtr = stackalloc StackItem[MaxSubdivisions * 8];
+            
+            nodeStackPtr[0] = new StackItem {
                 X = startX,
                 Y = startY,
                 Z = startZ,
@@ -52,10 +53,12 @@ namespace OctreeSplatting {
                 Level = 0,
             };
             
+            Delta* deltasPtr = stackalloc Delta[8];
+            
+            CalculateDeltas(deltasPtr);
+            
             fixed (PixelData* pixelsPtr = Pixels)
             fixed (OctreeNode* octreePtr = Octree)
-            fixed (Delta* deltasPtr = deltas)
-            fixed (StackItem* nodeStackPtr = nodeStack)
             {
                 var unsafeRenderer = new OctreeRendererUnsafe {
                     Viewport = Viewport,
@@ -84,8 +87,6 @@ namespace OctreeSplatting {
             CalculateRootInfo();
             
             if (startZ < 0) return false;
-            
-            CalculateDeltas();
             
             CalculateQueue();
             
@@ -148,7 +149,7 @@ namespace OctreeSplatting {
             startZ = TZ - extentZ;
         }
         
-        private void CalculateDeltas() {
+        private unsafe void CalculateDeltas(Delta* deltas) {
             int offsetZ = extentZ >> 1;
             int octant = 0;
             for (int z = -1; z <= 1; z += 2) {
