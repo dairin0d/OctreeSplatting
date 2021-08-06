@@ -34,7 +34,6 @@ namespace OctreeSplatting {
         
         private int extentX, extentY, extentZ;
         private int startX, startY, startZ;
-        private uint queue;
         
         private int XX, XY, XZ;
         private int YX, YY, YZ;
@@ -43,6 +42,10 @@ namespace OctreeSplatting {
         
         public unsafe void Render() {
             if (!Setup()) return;
+            
+            var queues = OctantOrder.SparseQueues;
+            int forwardKey = OctantOrder.Key(in Matrix);
+            int reverseKey = forwardKey ^ 0b11100000000;
             
             StackItem* nodeStackPtr = stackalloc StackItem[MaxSubdivisions * 8];
             
@@ -60,6 +63,7 @@ namespace OctreeSplatting {
             
             fixed (PixelData* pixelsPtr = Pixels)
             fixed (OctreeNode* octreePtr = Octree)
+            fixed (OctantOrder.Queue* queuesPtr = queues)
             {
                 var unsafeRenderer = new OctreeRendererUnsafe {
                     Viewport = Viewport,
@@ -71,8 +75,10 @@ namespace OctreeSplatting {
                     ExtentX = extentX,
                     ExtentY = extentY,
                     Deltas = deltasPtr,
-                    Queue = queue,
                     NodeStack = nodeStackPtr,
+                    
+                    ForwardQueues = queuesPtr + forwardKey,
+                    ReverseQueues = queuesPtr + reverseKey,
                 };
                 unsafeRenderer.Render();
             }
@@ -87,11 +93,7 @@ namespace OctreeSplatting {
             
             CalculateRootInfo();
             
-            if (startZ < 0) return false;
-            
-            CalculateQueue();
-            
-            return true;
+            return startZ >= 0;
         }
         
         private int CalculateMaxLevel() {
@@ -165,18 +167,6 @@ namespace OctreeSplatting {
             }
         }
         
-        private void CalculateQueue() {
-            int axisOrder = OctantOrder.Order(in Matrix);
-            int startingOctant = OctantOrder.Octant(in Matrix);
-            int nodeMask = 255;
-            
-            int lookupIndex = axisOrder;
-            lookupIndex = (lookupIndex << 3) | startingOctant;
-            lookupIndex = (lookupIndex << 8) | nodeMask;
-            
-            queue = OctantOrder.SparseQueues[lookupIndex].Octants;
-        }
-        
         private unsafe struct OctreeRendererUnsafe {
             public Range2D Viewport;
             public int BufferShift;
@@ -186,8 +176,10 @@ namespace OctreeSplatting {
             
             public int ExtentX, ExtentY;
             public Delta* Deltas;
-            public uint Queue;
             public StackItem* NodeStack;
+            
+            public OctantOrder.Queue* ForwardQueues;
+            public OctantOrder.Queue* ReverseQueues;
             
             public void Render() {
                 var stackTop = NodeStack;
@@ -253,8 +245,10 @@ namespace OctreeSplatting {
                     continue;
                     OcclusionTestPassed:;
                     
-                    for (int queueShift = 7 << 2; queueShift >= 0; queueShift -= 1 << 2) {
-                        uint octant = (Queue >> queueShift) & 7;
+                    var queue = ReverseQueues[node.Mask].Octants;
+                    
+                    for (; queue != 0; queue >>= 4) {
+                        uint octant = queue & 7;
                         
                         if ((node.Mask & (1 << (int)octant)) == 0) continue;
                         
