@@ -41,75 +41,19 @@ namespace OctreeSplatting {
             fixed (OctreeNode* octreePtr = Octree)
             fixed (Delta* deltasPtr = deltas)
             {
-                Render(startX, startY, startZ, RootAddress, 0, pixelsPtr, octreePtr, deltasPtr);
-            }
-        }
-        
-        private unsafe void Render(int nodeX, int nodeY, int nodeZ, uint address, int level,
-            PixelData* pixelsPtr, OctreeNode* octreePtr, Delta* deltasPtr)
-        {
-            var nodeExtentX = (extentX >> level) - SubpixelHalf;
-            var nodeExtentY = (extentY >> level) - SubpixelHalf;
-            
-            var boundingRect = new Range2D {
-                MinX = (nodeX - nodeExtentX) >> SubpixelBits,
-                MinY = (nodeY - nodeExtentY) >> SubpixelBits,
-                MaxX = (nodeX + nodeExtentX) >> SubpixelBits,
-                MaxY = (nodeY + nodeExtentY) >> SubpixelBits,
-            };
-            
-            var visibleRect = new Range2D {
-                MinX = (boundingRect.MinX > Viewport.MinX ? boundingRect.MinX : Viewport.MinX),
-                MinY = (boundingRect.MinY > Viewport.MinY ? boundingRect.MinY : Viewport.MinY),
-                MaxX = (boundingRect.MaxX < Viewport.MaxX ? boundingRect.MaxX : Viewport.MaxX),
-                MaxY = (boundingRect.MaxY < Viewport.MaxY ? boundingRect.MaxY : Viewport.MaxY),
-            };
-            
-            if ((visibleRect.MaxX < visibleRect.MinX) | (visibleRect.MaxY < visibleRect.MinY)) return;
-            
-            var node = octreePtr[address];
-            
-            var sizeX = boundingRect.MaxX - boundingRect.MinX;
-            var sizeY = boundingRect.MaxY - boundingRect.MinY;
-            var projectedSize = (sizeX > sizeY ? sizeX : sizeY);
-            
-            if ((node.Mask == 0) | (projectedSize < 1)) {
-                for (int y = visibleRect.MinY; y <= visibleRect.MaxY; y++) {
-                    int index = visibleRect.MinX + (y * BufferStride);
-                    for (int x = visibleRect.MinX; x <= visibleRect.MaxX; x++, index++) {
-                        ref var pixel = ref pixelsPtr[index];
-                        if (nodeZ < pixel.Depth) {
-                            pixel.Depth = nodeZ;
-                            pixel.Color24 = node.Data;
-                        }
-                    }
-                }
-                return;
-            }
-            
-            for (int y = visibleRect.MinY; y <= visibleRect.MaxY; y++) {
-                int index = visibleRect.MinX + (y * BufferStride);
-                for (int x = visibleRect.MinX; x <= visibleRect.MaxX; x++, index++) {
-                    ref var pixel = ref pixelsPtr[index];
-                    if (nodeZ < pixel.Depth) goto OcclusionTestPassed;
-                }
-            }
-            return;
-            OcclusionTestPassed:;
-            
-            for (int i = 0; i < 8; i++) {
-                uint octant = (queue >> (i*4)) & 7;
-                
-                if ((node.Mask & (1 << (int)octant)) == 0) continue;
-                
-                var delta = deltasPtr[octant];
-                
-                int childX = nodeX + (delta.X >> level);
-                int childY = nodeY + (delta.Y >> level);
-                int childZ = nodeZ + (delta.Z >> level);
-                var childAddress = node.Address + octant;
-                
-                Render(childX, childY, childZ, childAddress, level+1, pixelsPtr, octreePtr, deltasPtr);
+                var unsafeRenderer = new OctreeRendererUnsafe {
+                    Viewport = Viewport,
+                    BufferStride = BufferStride,
+                    Pixels = pixelsPtr,
+                    
+                    Octree = octreePtr,
+                    
+                    ExtentX = extentX,
+                    ExtentY = extentY,
+                    Deltas = deltasPtr,
+                    Queue = queue,
+                };
+                unsafeRenderer.Render(startX, startY, startZ, RootAddress, 0);
             }
         }
         
@@ -212,6 +156,84 @@ namespace OctreeSplatting {
             lookupIndex = (lookupIndex << 8) | nodeMask;
             
             queue = OctantOrder.SparseQueues[lookupIndex].Octants;
+        }
+        
+        private unsafe struct OctreeRendererUnsafe {
+            public Range2D Viewport;
+            public int BufferStride;
+            public PixelData* Pixels;
+            
+            public OctreeNode* Octree;
+            
+            public int ExtentX, ExtentY;
+            public Delta* Deltas;
+            public uint Queue;
+            
+            public void Render(int nodeX, int nodeY, int nodeZ, uint address, int level) {
+                var nodeExtentX = (ExtentX >> level) - SubpixelHalf;
+                var nodeExtentY = (ExtentY >> level) - SubpixelHalf;
+                
+                var boundingRect = new Range2D {
+                    MinX = (nodeX - nodeExtentX) >> SubpixelBits,
+                    MinY = (nodeY - nodeExtentY) >> SubpixelBits,
+                    MaxX = (nodeX + nodeExtentX) >> SubpixelBits,
+                    MaxY = (nodeY + nodeExtentY) >> SubpixelBits,
+                };
+                
+                var visibleRect = new Range2D {
+                    MinX = (boundingRect.MinX > Viewport.MinX ? boundingRect.MinX : Viewport.MinX),
+                    MinY = (boundingRect.MinY > Viewport.MinY ? boundingRect.MinY : Viewport.MinY),
+                    MaxX = (boundingRect.MaxX < Viewport.MaxX ? boundingRect.MaxX : Viewport.MaxX),
+                    MaxY = (boundingRect.MaxY < Viewport.MaxY ? boundingRect.MaxY : Viewport.MaxY),
+                };
+                
+                if ((visibleRect.MaxX < visibleRect.MinX) | (visibleRect.MaxY < visibleRect.MinY)) return;
+                
+                var node = Octree[address];
+                
+                var sizeX = boundingRect.MaxX - boundingRect.MinX;
+                var sizeY = boundingRect.MaxY - boundingRect.MinY;
+                var projectedSize = (sizeX > sizeY ? sizeX : sizeY);
+                
+                if ((node.Mask == 0) | (projectedSize < 1)) {
+                    for (int y = visibleRect.MinY; y <= visibleRect.MaxY; y++) {
+                        int index = visibleRect.MinX + (y * BufferStride);
+                        for (int x = visibleRect.MinX; x <= visibleRect.MaxX; x++, index++) {
+                            ref var pixel = ref Pixels[index];
+                            if (nodeZ < pixel.Depth) {
+                                pixel.Depth = nodeZ;
+                                pixel.Color24 = node.Data;
+                            }
+                        }
+                    }
+                    return;
+                }
+                
+                for (int y = visibleRect.MinY; y <= visibleRect.MaxY; y++) {
+                    int index = visibleRect.MinX + (y * BufferStride);
+                    for (int x = visibleRect.MinX; x <= visibleRect.MaxX; x++, index++) {
+                        ref var pixel = ref Pixels[index];
+                        if (nodeZ < pixel.Depth) goto OcclusionTestPassed;
+                    }
+                }
+                return;
+                OcclusionTestPassed:;
+                
+                for (int i = 0; i < 8; i++) {
+                    uint octant = (Queue >> (i*4)) & 7;
+                    
+                    if ((node.Mask & (1 << (int)octant)) == 0) continue;
+                    
+                    var delta = Deltas[octant];
+                    
+                    int childX = nodeX + (delta.X >> level);
+                    int childY = nodeY + (delta.Y >> level);
+                    int childZ = nodeZ + (delta.Z >> level);
+                    var childAddress = node.Address + octant;
+                    
+                    Render(childX, childY, childZ, childAddress, level+1);
+                }
+            }
         }
     }
 }
