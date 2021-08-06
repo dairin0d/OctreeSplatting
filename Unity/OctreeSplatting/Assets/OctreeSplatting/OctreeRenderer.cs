@@ -250,8 +250,6 @@ namespace OctreeSplatting {
                     for (; queue != 0; queue >>= 4) {
                         uint octant = queue & 7;
                         
-                        if ((node.Mask & (1 << (int)octant)) == 0) continue;
-                        
                         ref var delta = ref Deltas[octant];
                         
                         ++stackTop;
