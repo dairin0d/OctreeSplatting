@@ -5,10 +5,12 @@ namespace OctreeSplatting {
     public class Renderbuffer {
         public const int DepthBits = 24;
         
+        private int shiftX;
         private int sizeX, sizeY;
         private PixelData[] dataPixels;
         private Color32[] colorPixels;
         
+        public int ShiftX => shiftX;
         public int SizeX => sizeX;
         public int SizeY => sizeY;
         public int SizeZ => 1 << DepthBits;
@@ -22,7 +24,9 @@ namespace OctreeSplatting {
             sizeX = width;
             sizeY = height;
             
-            dataPixels = new PixelData[sizeX * sizeY];
+            for (shiftX = 0; (1 << shiftX) < sizeX; shiftX++);
+            
+            dataPixels = new PixelData[(1 << shiftX) * sizeY];
             colorPixels = new Color32[sizeX * sizeY];
         }
         
@@ -34,18 +38,19 @@ namespace OctreeSplatting {
             defaultValue.Color32 = background;
             
             for (int y = 0; y < sizeY; y++) {
-                int index = y * sizeX;
-                for (int x = 0; x < sizeX; x++, index++) {
-                    dataPixels[index] = defaultValue;
+                int dataIndex = y << shiftX;
+                for (int x = 0; x < sizeX; x++, dataIndex++) {
+                    dataPixels[dataIndex] = defaultValue;
                 }
             }
         }
         
         public void End() {
             for (int y = 0; y < sizeY; y++) {
-                int index = y * sizeX;
-                for (int x = 0; x < sizeX; x++, index++) {
-                    colorPixels[index] = dataPixels[index].Color32;
+                int dataIndex = y << shiftX;
+                int colorIndex = y * sizeX;
+                for (int x = 0; x < sizeX; x++, dataIndex++, colorIndex++) {
+                    colorPixels[colorIndex] = dataPixels[dataIndex].Color32;
                 }
             }
         }

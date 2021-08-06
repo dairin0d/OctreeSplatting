@@ -134,7 +134,7 @@ namespace OctreeSplatting.Demo {
             renderer.Viewport.MinY = 0;
             renderer.Viewport.MaxX = renderbuffer.SizeX - 1;
             renderer.Viewport.MaxY = renderbuffer.SizeY - 1;
-            renderer.BufferStride = renderbuffer.SizeX;
+            renderer.BufferShift = renderbuffer.ShiftX;
             renderer.Pixels = renderbuffer.DataPixels;
             
             var near = cameraFrustum.Near;
