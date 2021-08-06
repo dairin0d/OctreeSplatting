@@ -189,7 +189,7 @@ namespace OctreeSplatting {
                 
                 if ((visibleRect.MaxX < visibleRect.MinX) | (visibleRect.MaxY < visibleRect.MinY)) return;
                 
-                var node = Octree[address];
+                ref var node = ref Octree[address];
                 
                 var sizeX = boundingRect.MaxX - boundingRect.MinX;
                 var sizeY = boundingRect.MaxY - boundingRect.MinY;
@@ -224,7 +224,7 @@ namespace OctreeSplatting {
                     
                     if ((node.Mask & (1 << (int)octant)) == 0) continue;
                     
-                    var delta = Deltas[octant];
+                    ref var delta = ref Deltas[octant];
                     
                     int childX = nodeX + (delta.X >> level);
                     int childY = nodeY + (delta.Y >> level);
