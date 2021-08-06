@@ -235,6 +235,7 @@ namespace OctreeSplatting {
                             for (int i = j; i <= iEnd; i++) {
                                 if (current.Z < Pixels[i].Depth) goto OcclusionTestPassed;
                             }
+                            current.MinY++;
                         }
                     }
                     continue;
