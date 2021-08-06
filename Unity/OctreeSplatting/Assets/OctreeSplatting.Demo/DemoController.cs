@@ -35,12 +35,17 @@ namespace OctreeSplatting.Demo {
         private System.Diagnostics.Stopwatch stopwatch = new System.Diagnostics.Stopwatch();
         private double averageFrameTime;
         private long frameCount;
+        private Dictionary<int, int> timeHistogram = new Dictionary<int, int>();
+        private int timeCountMax;
+        private int mostProbableTime;
 
         private OctreeSplatting.Color32 background = new OctreeSplatting.Color32 {R = 50, G = 80, B = 80, A = 255};
 
         public string ViewInfo => $"P={(int)cameraPitch}, Y={(int)cameraYaw}, Z={zoomSteps}";
+        public string TimeInfo => $"{FrameTime} ({MostProbableTime}) ms/frame";
         public int FrameTime => (int)stopwatch.ElapsedMilliseconds;
         public double AverageFrameTime => averageFrameTime;
+        public int MostProbableTime => mostProbableTime;
 
         public int Zoom {
             get => zoomSteps;
@@ -125,8 +130,26 @@ namespace OctreeSplatting.Demo {
             
             stopwatch.Stop();
             
+            UpdateTimeInfo();
+        }
+
+        private void UpdateTimeInfo() {
             frameCount++;
             averageFrameTime = (averageFrameTime * (frameCount-1) + stopwatch.ElapsedMilliseconds) / frameCount;
+            
+            int time = (int)stopwatch.ElapsedMilliseconds;
+            if (!timeHistogram.TryGetValue(time, out int timeCount)) timeCount = 0;
+            timeCount++;
+            timeHistogram[time] = timeCount;
+            
+            if (timeCount > timeCountMax) {
+                timeCountMax = timeCount;
+                mostProbableTime = int.MaxValue;
+                foreach (var kv in timeHistogram) {
+                    if (kv.Value != timeCountMax) continue;
+                    mostProbableTime = Math.Min(mostProbableTime, kv.Key);
+                }
+            }
         }
 
         private void DrawOctrees(Matrix4x4 viewMatrix, Matrix4x4 projectionMatrix) {
