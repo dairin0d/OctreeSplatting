@@ -216,7 +216,14 @@ namespace OctreeSplatting {
                     
                     ref var node = ref Octree[current.Address];
                     
-                    if ((node.Mask == 0) | isPixelSize) {
+                    if (isPixelSize) {
+                        int i = minX + (minY << BufferShift);
+                        if (current.Z < Pixels[i].Depth) {
+                            Pixels[i].Depth = current.Z;
+                            Pixels[i].Color24 = node.Data;
+                        }
+                        continue;
+                    } else if (node.Mask == 0) {
                         int j = minX + (minY << BufferShift);
                         int jEnd = minX + (maxY << BufferShift);
                         int iEnd = maxX + (minY << BufferShift);
