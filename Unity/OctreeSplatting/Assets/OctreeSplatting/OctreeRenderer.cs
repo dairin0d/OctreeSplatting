@@ -197,39 +197,35 @@ namespace OctreeSplatting {
                     var current = *stackTop;
                     --stackTop;
                     
-                    var nodeExtentX = (ExtentX >> current.Level) - SubpixelHalf;
-                    var nodeExtentY = (ExtentY >> current.Level) - SubpixelHalf;
+                    int nodeExtentX = (ExtentX >> current.Level) - SubpixelHalf;
+                    int nodeExtentY = (ExtentY >> current.Level) - SubpixelHalf;
                     
-                    var boundingRect = new Range2D {
-                        MinX = (current.X - nodeExtentX) >> SubpixelBits,
-                        MinY = (current.Y - nodeExtentY) >> SubpixelBits,
-                        MaxX = (current.X + nodeExtentX) >> SubpixelBits,
-                        MaxY = (current.Y + nodeExtentY) >> SubpixelBits,
-                    };
+                    int minX = (current.X - nodeExtentX) >> SubpixelBits;
+                    int minY = (current.Y - nodeExtentY) >> SubpixelBits;
+                    int maxX = (current.X + nodeExtentX) >> SubpixelBits;
+                    int maxY = (current.Y + nodeExtentY) >> SubpixelBits;
                     
-                    var visibleRect = new Range2D {
-                        MinX = (boundingRect.MinX > Viewport.MinX ? boundingRect.MinX : Viewport.MinX),
-                        MinY = (boundingRect.MinY > Viewport.MinY ? boundingRect.MinY : Viewport.MinY),
-                        MaxX = (boundingRect.MaxX < Viewport.MaxX ? boundingRect.MaxX : Viewport.MaxX),
-                        MaxY = (boundingRect.MaxY < Viewport.MaxY ? boundingRect.MaxY : Viewport.MaxY),
-                    };
+                    bool isPixelSize = (maxX - minX < 1) & (maxY - minY < 1);
                     
-                    if ((visibleRect.MaxX < visibleRect.MinX) | (visibleRect.MaxY < visibleRect.MinY)) continue;
+                    if (minX < Viewport.MinX) minX = Viewport.MinX;
+                    if (minY < Viewport.MinY) minY = Viewport.MinY;
+                    if (maxX > Viewport.MaxX) maxX = Viewport.MaxX;
+                    if (maxY > Viewport.MaxY) maxY = Viewport.MaxY;
+                    
+                    if ((maxX < minX) | (maxY < minY)) continue;
                     
                     ref var node = ref Octree[current.Address];
                     
-                    var sizeX = boundingRect.MaxX - boundingRect.MinX;
-                    var sizeY = boundingRect.MaxY - boundingRect.MinY;
-                    var projectedSize = (sizeX > sizeY ? sizeX : sizeY);
-                    
-                    if ((node.Mask == 0) | (projectedSize < 1)) {
-                        for (int y = visibleRect.MinY; y <= visibleRect.MaxY; y++) {
-                            int index = visibleRect.MinX + (y << BufferShift);
-                            for (int x = visibleRect.MinX; x <= visibleRect.MaxX; x++, index++) {
-                                ref var pixel = ref Pixels[index];
-                                if (current.Z < pixel.Depth) {
-                                    pixel.Depth = current.Z;
-                                    pixel.Color24 = node.Data;
+                    if ((node.Mask == 0) | isPixelSize) {
+                        int j = minX + (minY << BufferShift);
+                        int jEnd = minX + (maxY << BufferShift);
+                        int iEnd = maxX + (minY << BufferShift);
+                        int jStep = 1 << BufferShift;
+                        for (; j <= jEnd; j += jStep, iEnd += jStep) {
+                            for (int i = j; i <= iEnd; i++) {
+                                if (current.Z < Pixels[i].Depth) {
+                                    Pixels[i].Depth = current.Z;
+                                    Pixels[i].Color24 = node.Data;
                                 }
                             }
                         }
@@ -237,19 +233,21 @@ namespace OctreeSplatting {
                     }
                     
                     {
-                        for (int y = visibleRect.MinY; y <= visibleRect.MaxY; y++) {
-                            int index = visibleRect.MinX + (y << BufferShift);
-                            for (int x = visibleRect.MinX; x <= visibleRect.MaxX; x++, index++) {
-                                ref var pixel = ref Pixels[index];
-                                if (current.Z < pixel.Depth) goto OcclusionTestPassed;
+                        int j = minX + (minY << BufferShift);
+                        int jEnd = minX + (maxY << BufferShift);
+                        int iEnd = maxX + (minY << BufferShift);
+                        int jStep = 1 << BufferShift;
+                        for (; j <= jEnd; j += jStep, iEnd += jStep) {
+                            for (int i = j; i <= iEnd; i++) {
+                                if (current.Z < Pixels[i].Depth) goto OcclusionTestPassed;
                             }
                         }
                     }
                     continue;
                     OcclusionTestPassed:;
                     
-                    for (int i = 7; i >= 0; i--) {
-                        uint octant = (Queue >> (i << 2)) & 7;
+                    for (int queueShift = 7 << 2; queueShift >= 0; queueShift -= 1 << 2) {
+                        uint octant = (Queue >> queueShift) & 7;
                         
                         if ((node.Mask & (1 << (int)octant)) == 0) continue;
                         
