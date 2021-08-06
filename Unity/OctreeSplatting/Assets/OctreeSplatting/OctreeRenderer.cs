@@ -12,6 +12,8 @@ namespace OctreeSplatting {
         }
         
         private struct StackItem {
+            public int MinX, MinY, MaxX, MaxY;
+            public int MaxSize;
             public int X, Y, Z;
             public uint Address;
             public int Level;
@@ -32,8 +34,9 @@ namespace OctreeSplatting {
         public OctreeNode[] Octree;
         public uint RootAddress;
         
+        private StackItem rootInfo;
+        
         private int extentX, extentY, extentZ;
-        private int startX, startY, startZ;
         
         private int XX, XY, XZ;
         private int YX, YY, YZ;
@@ -41,7 +44,14 @@ namespace OctreeSplatting {
         private int TX, TY, TZ;
         
         public unsafe void Render() {
-            if (!Setup()) return;
+            int maxLevel = CalculateMaxLevel();
+            if (maxLevel < 0) return;
+            
+            CalculateIntMatrix(maxLevel);
+            
+            CalculateRootInfo();
+            if (rootInfo.Z < 0) return;
+            if ((rootInfo.MaxX < rootInfo.MinX) | (rootInfo.MaxY < rootInfo.MinY)) return;
             
             var queues = OctantOrder.SparseQueues;
             int forwardKey = OctantOrder.Key(in Matrix);
@@ -49,13 +59,7 @@ namespace OctreeSplatting {
             
             StackItem* nodeStackPtr = stackalloc StackItem[MaxSubdivisions * 8];
             
-            nodeStackPtr[0] = new StackItem {
-                X = startX,
-                Y = startY,
-                Z = startZ,
-                Address = RootAddress,
-                Level = 0,
-            };
+            nodeStackPtr[0] = rootInfo;
             
             Delta* deltasPtr = stackalloc Delta[8];
             
@@ -66,7 +70,6 @@ namespace OctreeSplatting {
             fixed (OctantOrder.Queue* queuesPtr = queues)
             {
                 var unsafeRenderer = new OctreeRendererUnsafe {
-                    Viewport = Viewport,
                     BufferShift = BufferShift,
                     Pixels = pixelsPtr,
                     
@@ -82,18 +85,6 @@ namespace OctreeSplatting {
                 };
                 unsafeRenderer.Render();
             }
-        }
-        
-        private bool Setup() {
-            int maxLevel = CalculateMaxLevel();
-            
-            if (maxLevel < 0) return false;
-            
-            CalculateIntMatrix(maxLevel);
-            
-            CalculateRootInfo();
-            
-            return startZ >= 0;
         }
         
         private int CalculateMaxLevel() {
@@ -147,9 +138,31 @@ namespace OctreeSplatting {
             extentY = (Math.Abs(XY) + Math.Abs(YY) + Math.Abs(ZY)) << 1;
             extentZ = (Math.Abs(XZ) + Math.Abs(YZ) + Math.Abs(ZZ)) << 1;
             
-            startX = TX;
-            startY = TY;
-            startZ = TZ - extentZ;
+            rootInfo.Level = 0;
+            rootInfo.Address = RootAddress;
+            rootInfo.X = TX;
+            rootInfo.Y = TY;
+            rootInfo.Z = TZ - extentZ;
+            CalculateRootRect();
+        }
+        
+        private void CalculateRootRect() {
+            int nodeExtentX = extentX - SubpixelHalf;
+            int nodeExtentY = extentY - SubpixelHalf;
+            
+            rootInfo.MinX = (rootInfo.X - nodeExtentX) >> SubpixelBits;
+            rootInfo.MinY = (rootInfo.Y - nodeExtentY) >> SubpixelBits;
+            rootInfo.MaxX = (rootInfo.X + nodeExtentX) >> SubpixelBits;
+            rootInfo.MaxY = (rootInfo.Y + nodeExtentY) >> SubpixelBits;
+            
+            int width = rootInfo.MaxX - rootInfo.MinX;
+            int height = rootInfo.MaxY - rootInfo.MinY;
+            rootInfo.MaxSize = (width > height ? width : height);
+            
+            if (rootInfo.MinX < Viewport.MinX) rootInfo.MinX = Viewport.MinX;
+            if (rootInfo.MinY < Viewport.MinY) rootInfo.MinY = Viewport.MinY;
+            if (rootInfo.MaxX > Viewport.MaxX) rootInfo.MaxX = Viewport.MaxX;
+            if (rootInfo.MaxY > Viewport.MaxY) rootInfo.MaxY = Viewport.MaxY;
         }
         
         private unsafe void CalculateDeltas(Delta* deltas) {
@@ -168,7 +181,6 @@ namespace OctreeSplatting {
         }
         
         private unsafe struct OctreeRendererUnsafe {
-            public Range2D Viewport;
             public int BufferShift;
             public PixelData* Pixels;
             
@@ -189,36 +201,19 @@ namespace OctreeSplatting {
                     var current = *stackTop;
                     --stackTop;
                     
-                    int nodeExtentX = (ExtentX >> current.Level) - SubpixelHalf;
-                    int nodeExtentY = (ExtentY >> current.Level) - SubpixelHalf;
-                    
-                    int minX = (current.X - nodeExtentX) >> SubpixelBits;
-                    int minY = (current.Y - nodeExtentY) >> SubpixelBits;
-                    int maxX = (current.X + nodeExtentX) >> SubpixelBits;
-                    int maxY = (current.Y + nodeExtentY) >> SubpixelBits;
-                    
-                    bool isPixelSize = (maxX - minX < 1) & (maxY - minY < 1);
-                    
-                    if (minX < Viewport.MinX) minX = Viewport.MinX;
-                    if (minY < Viewport.MinY) minY = Viewport.MinY;
-                    if (maxX > Viewport.MaxX) maxX = Viewport.MaxX;
-                    if (maxY > Viewport.MaxY) maxY = Viewport.MaxY;
-                    
-                    if ((maxX < minX) | (maxY < minY)) continue;
-                    
                     ref var node = ref Octree[current.Address];
                     
-                    if (isPixelSize) {
-                        int i = minX + (minY << BufferShift);
+                    if (current.MaxSize < 1) {
+                        int i = current.MinX + (current.MinY << BufferShift);
                         if (current.Z < Pixels[i].Depth) {
                             Pixels[i].Depth = current.Z;
                             Pixels[i].Color24 = node.Data;
                         }
                         continue;
                     } else if (node.Mask == 0) {
-                        int j = minX + (minY << BufferShift);
-                        int jEnd = minX + (maxY << BufferShift);
-                        int iEnd = maxX + (minY << BufferShift);
+                        int j = current.MinX + (current.MinY << BufferShift);
+                        int jEnd = current.MinX + (current.MaxY << BufferShift);
+                        int iEnd = current.MaxX + (current.MinY << BufferShift);
                         int jStep = 1 << BufferShift;
                         for (; j <= jEnd; j += jStep, iEnd += jStep) {
                             for (int i = j; i <= iEnd; i++) {
@@ -232,9 +227,9 @@ namespace OctreeSplatting {
                     }
                     
                     {
-                        int j = minX + (minY << BufferShift);
-                        int jEnd = minX + (maxY << BufferShift);
-                        int iEnd = maxX + (minY << BufferShift);
+                        int j = current.MinX + (current.MinY << BufferShift);
+                        int jEnd = current.MinX + (current.MaxY << BufferShift);
+                        int iEnd = current.MaxX + (current.MinY << BufferShift);
                         int jStep = 1 << BufferShift;
                         for (; j <= jEnd; j += jStep, iEnd += jStep) {
                             for (int i = j; i <= iEnd; i++) {
@@ -247,17 +242,45 @@ namespace OctreeSplatting {
                     
                     var queue = ReverseQueues[node.Mask].Octants;
                     
+                    int nextLevel = current.Level + 1;
+                    int nodeExtentX = (ExtentX >> nextLevel) - SubpixelHalf;
+                    int nodeExtentY = (ExtentY >> nextLevel) - SubpixelHalf;
+                    
                     for (; queue != 0; queue >>= 4) {
                         uint octant = queue & 7;
                         
                         ref var delta = ref Deltas[octant];
                         
+                        int x = current.X + (delta.X >> current.Level);
+                        int y = current.Y + (delta.Y >> current.Level);
+                        
+                        int minX = (x - nodeExtentX) >> SubpixelBits;
+                        int minY = (y - nodeExtentY) >> SubpixelBits;
+                        int maxX = (x + nodeExtentX) >> SubpixelBits;
+                        int maxY = (y + nodeExtentY) >> SubpixelBits;
+                        
+                        int width = maxX - minX;
+                        int height = maxY - minY;
+                        int maxSize = (width > height ? width : height);
+                        
+                        if (minX < current.MinX) minX = current.MinX;
+                        if (minY < current.MinY) minY = current.MinY;
+                        if (maxX > current.MaxX) maxX = current.MaxX;
+                        if (maxY > current.MaxY) maxY = current.MaxY;
+                        
+                        if ((maxX < minX) | (maxY < minY)) continue;
+                        
                         ++stackTop;
-                        stackTop->X = current.X + (delta.X >> current.Level);
-                        stackTop->Y = current.Y + (delta.Y >> current.Level);
+                        stackTop->MinX = minX;
+                        stackTop->MinY = minY;
+                        stackTop->MaxX = maxX;
+                        stackTop->MaxY = maxY;
+                        stackTop->MaxSize = maxSize;
+                        stackTop->X = x;
+                        stackTop->Y = y;
                         stackTop->Z = current.Z + (delta.Z >> current.Level);
                         stackTop->Address = node.Address + octant;
-                        stackTop->Level = current.Level + 1;
+                        stackTop->Level = nextLevel;
                     }
                 }
             }
