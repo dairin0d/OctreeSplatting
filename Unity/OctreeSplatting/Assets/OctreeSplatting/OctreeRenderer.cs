@@ -10,6 +10,12 @@ namespace OctreeSplatting {
             public int X, Y, Z;
         }
         
+        private struct StackItem {
+            public int X, Y, Z;
+            public uint Address;
+            public int Level;
+        }
+        
         private const int SubpixelBits = 16;
         private const int SubpixelSize = 1 << SubpixelBits;
         private const int SubpixelHalf = SubpixelSize >> 1;
@@ -28,6 +34,7 @@ namespace OctreeSplatting {
         private int startX, startY, startZ;
         private Delta[] deltas = new Delta[8];
         private uint queue;
+        private StackItem[] nodeStack = new StackItem[32 * 8];
         
         private int XX, XY, XZ;
         private int YX, YY, YZ;
@@ -37,9 +44,18 @@ namespace OctreeSplatting {
         public unsafe void Render() {
             if (!Setup()) return;
             
+            nodeStack[0] = new StackItem {
+                X = startX,
+                Y = startY,
+                Z = startZ,
+                Address = RootAddress,
+                Level = 0,
+            };
+            
             fixed (PixelData* pixelsPtr = Pixels)
             fixed (OctreeNode* octreePtr = Octree)
             fixed (Delta* deltasPtr = deltas)
+            fixed (StackItem* nodeStackPtr = nodeStack)
             {
                 var unsafeRenderer = new OctreeRendererUnsafe {
                     Viewport = Viewport,
@@ -52,8 +68,9 @@ namespace OctreeSplatting {
                     ExtentY = extentY,
                     Deltas = deltasPtr,
                     Queue = queue,
+                    NodeStack = nodeStackPtr,
                 };
-                unsafeRenderer.Render(startX, startY, startZ, RootAddress, 0);
+                unsafeRenderer.Render();
             }
         }
         
@@ -168,70 +185,79 @@ namespace OctreeSplatting {
             public int ExtentX, ExtentY;
             public Delta* Deltas;
             public uint Queue;
+            public StackItem* NodeStack;
             
-            public void Render(int nodeX, int nodeY, int nodeZ, uint address, int level) {
-                var nodeExtentX = (ExtentX >> level) - SubpixelHalf;
-                var nodeExtentY = (ExtentY >> level) - SubpixelHalf;
+            public void Render() {
+                var stackTop = NodeStack;
                 
-                var boundingRect = new Range2D {
-                    MinX = (nodeX - nodeExtentX) >> SubpixelBits,
-                    MinY = (nodeY - nodeExtentY) >> SubpixelBits,
-                    MaxX = (nodeX + nodeExtentX) >> SubpixelBits,
-                    MaxY = (nodeY + nodeExtentY) >> SubpixelBits,
-                };
-                
-                var visibleRect = new Range2D {
-                    MinX = (boundingRect.MinX > Viewport.MinX ? boundingRect.MinX : Viewport.MinX),
-                    MinY = (boundingRect.MinY > Viewport.MinY ? boundingRect.MinY : Viewport.MinY),
-                    MaxX = (boundingRect.MaxX < Viewport.MaxX ? boundingRect.MaxX : Viewport.MaxX),
-                    MaxY = (boundingRect.MaxY < Viewport.MaxY ? boundingRect.MaxY : Viewport.MaxY),
-                };
-                
-                if ((visibleRect.MaxX < visibleRect.MinX) | (visibleRect.MaxY < visibleRect.MinY)) return;
-                
-                ref var node = ref Octree[address];
-                
-                var sizeX = boundingRect.MaxX - boundingRect.MinX;
-                var sizeY = boundingRect.MaxY - boundingRect.MinY;
-                var projectedSize = (sizeX > sizeY ? sizeX : sizeY);
-                
-                if ((node.Mask == 0) | (projectedSize < 1)) {
+                while (stackTop >= NodeStack) {
+                    // We need a copy anyway for subnode processing
+                    var current = *stackTop;
+                    --stackTop;
+                    
+                    var nodeExtentX = (ExtentX >> current.Level) - SubpixelHalf;
+                    var nodeExtentY = (ExtentY >> current.Level) - SubpixelHalf;
+                    
+                    var boundingRect = new Range2D {
+                        MinX = (current.X - nodeExtentX) >> SubpixelBits,
+                        MinY = (current.Y - nodeExtentY) >> SubpixelBits,
+                        MaxX = (current.X + nodeExtentX) >> SubpixelBits,
+                        MaxY = (current.Y + nodeExtentY) >> SubpixelBits,
+                    };
+                    
+                    var visibleRect = new Range2D {
+                        MinX = (boundingRect.MinX > Viewport.MinX ? boundingRect.MinX : Viewport.MinX),
+                        MinY = (boundingRect.MinY > Viewport.MinY ? boundingRect.MinY : Viewport.MinY),
+                        MaxX = (boundingRect.MaxX < Viewport.MaxX ? boundingRect.MaxX : Viewport.MaxX),
+                        MaxY = (boundingRect.MaxY < Viewport.MaxY ? boundingRect.MaxY : Viewport.MaxY),
+                    };
+                    
+                    if ((visibleRect.MaxX < visibleRect.MinX) | (visibleRect.MaxY < visibleRect.MinY)) continue;
+                    
+                    ref var node = ref Octree[current.Address];
+                    
+                    var sizeX = boundingRect.MaxX - boundingRect.MinX;
+                    var sizeY = boundingRect.MaxY - boundingRect.MinY;
+                    var projectedSize = (sizeX > sizeY ? sizeX : sizeY);
+                    
+                    if ((node.Mask == 0) | (projectedSize < 1)) {
+                        for (int y = visibleRect.MinY; y <= visibleRect.MaxY; y++) {
+                            int index = visibleRect.MinX + (y * BufferStride);
+                            for (int x = visibleRect.MinX; x <= visibleRect.MaxX; x++, index++) {
+                                ref var pixel = ref Pixels[index];
+                                if (current.Z < pixel.Depth) {
+                                    pixel.Depth = current.Z;
+                                    pixel.Color24 = node.Data;
+                                }
+                            }
+                        }
+                        continue;
+                    }
+                    
                     for (int y = visibleRect.MinY; y <= visibleRect.MaxY; y++) {
                         int index = visibleRect.MinX + (y * BufferStride);
                         for (int x = visibleRect.MinX; x <= visibleRect.MaxX; x++, index++) {
                             ref var pixel = ref Pixels[index];
-                            if (nodeZ < pixel.Depth) {
-                                pixel.Depth = nodeZ;
-                                pixel.Color24 = node.Data;
-                            }
+                            if (current.Z < pixel.Depth) goto OcclusionTestPassed;
                         }
                     }
-                    return;
-                }
-                
-                for (int y = visibleRect.MinY; y <= visibleRect.MaxY; y++) {
-                    int index = visibleRect.MinX + (y * BufferStride);
-                    for (int x = visibleRect.MinX; x <= visibleRect.MaxX; x++, index++) {
-                        ref var pixel = ref Pixels[index];
-                        if (nodeZ < pixel.Depth) goto OcclusionTestPassed;
+                    continue;
+                    OcclusionTestPassed:;
+                    
+                    for (int i = 7; i >= 0; i--) {
+                        uint octant = (Queue >> (i*4)) & 7;
+                        
+                        if ((node.Mask & (1 << (int)octant)) == 0) continue;
+                        
+                        ref var delta = ref Deltas[octant];
+                        
+                        ++stackTop;
+                        stackTop->X = current.X + (delta.X >> current.Level);
+                        stackTop->Y = current.Y + (delta.Y >> current.Level);
+                        stackTop->Z = current.Z + (delta.Z >> current.Level);
+                        stackTop->Address = node.Address + octant;
+                        stackTop->Level = current.Level + 1;
                     }
-                }
-                return;
-                OcclusionTestPassed:;
-                
-                for (int i = 0; i < 8; i++) {
-                    uint octant = (Queue >> (i*4)) & 7;
-                    
-                    if ((node.Mask & (1 << (int)octant)) == 0) continue;
-                    
-                    ref var delta = ref Deltas[octant];
-                    
-                    int childX = nodeX + (delta.X >> level);
-                    int childY = nodeY + (delta.Y >> level);
-                    int childZ = nodeZ + (delta.Z >> level);
-                    var childAddress = node.Address + octant;
-                    
-                    Render(childX, childY, childZ, childAddress, level+1);
                 }
             }
         }
