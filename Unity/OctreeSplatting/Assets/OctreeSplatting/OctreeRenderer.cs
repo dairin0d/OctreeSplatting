@@ -123,7 +123,7 @@ namespace OctreeSplatting {
             maxGap = Math.Max(maxGap, absXX + absYX + absZX);
             maxGap = Math.Max(maxGap, absXY + absYY + absZY);
             
-            int maxShift = 30 - SubpixelBits;
+            int maxShift = 29 - SubpixelBits;
             
             for (int maxLevel = 0; maxLevel <= maxShift; maxLevel++) {
                 if (maxGap < (1 << maxLevel)) return maxLevel;
