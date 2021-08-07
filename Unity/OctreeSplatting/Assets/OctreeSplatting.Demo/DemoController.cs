@@ -15,7 +15,7 @@ namespace OctreeSplatting.Demo {
         private float DistanceScale => (float)Math.Pow(2, distanceSteps * zoomFactor);
         
         private float zoomFactor = 0.125f;
-        private int distanceSteps = 16;
+        private int distanceSteps = 56;
         private int zoomSteps = -12;
         private float cameraPitch = -37;
         private float cameraYaw = -47;
