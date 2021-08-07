@@ -24,6 +24,9 @@ namespace OctreeSplatting {
         private const int SubpixelHalf = SubpixelSize >> 1;
         private const int MaxSubdivisions = 31 - SubpixelBits;
         
+        private const int MapBits = 5;
+        private const int MapSize = 1 << MapBits;
+        
         // Viewport & renderbuffer info
         public Range2D Viewport;
         public int BufferShift;
@@ -33,6 +36,8 @@ namespace OctreeSplatting {
         public Matrix4x4 Matrix;
         public OctreeNode[] Octree;
         public uint RootAddress;
+        
+        public int MapThreshold = 2;
         
         public int DrawnPixels;
         
@@ -70,8 +75,11 @@ namespace OctreeSplatting {
             nodeStackPtr[0] = rootInfo;
             
             Delta* deltasPtr = stackalloc Delta[8];
-            
             CalculateDeltas(deltasPtr);
+            
+            byte* mapX = stackalloc byte[MapSize];
+            byte* mapY = stackalloc byte[MapSize];
+            int mapShift = CalculateMaps(deltasPtr, mapX, mapY);
             
             fixed (PixelData* pixelsPtr = Pixels)
             fixed (OctreeNode* octreePtr = Octree)
@@ -93,7 +101,14 @@ namespace OctreeSplatting {
                     ReverseQueues = queuesPtr + reverseKey,
                     
                     TraceBuffer = traceBufferPtr,
+                    
+                    MapX = mapX,
+                    MapY = mapY,
+                    MapShift = mapShift,
+                    
+                    MapThreshold = MapThreshold,
                 };
+                
                 DrawnPixels = unsafeRenderer.Render();
             }
         }
@@ -204,6 +219,39 @@ namespace OctreeSplatting {
             }
         }
         
+        private unsafe int CalculateMaps(Delta* deltas, byte* mapX, byte* mapY) {
+            int maxSize = Math.Max(extentX, extentY) * 2 + 1;
+            int safeSize = MapSize - 2; // ensure 1-pixel empty border, just to be safe
+            int mapShift = 0;
+            while ((safeSize << mapShift) < maxSize) mapShift++;
+            
+            int mapCenter = (MapSize << mapShift) >> 1;
+            
+            int nodeExtentX = extentX >> 1;
+            int nodeExtentY = extentY >> 1;
+            
+            for (int octant = 0; octant < 8; octant++) {
+                int nodeX = mapCenter + deltas[octant].X;
+                int nodeY = mapCenter + deltas[octant].Y;
+                
+                int minX = (nodeX - nodeExtentX) >> mapShift;
+                int minY = (nodeY - nodeExtentY) >> mapShift;
+                int maxX = (nodeX + nodeExtentX) >> mapShift;
+                int maxY = (nodeY + nodeExtentY) >> mapShift;
+                
+                byte mask = (byte)(1 << octant);
+                
+                for (int x = minX; x <= maxX; x++) {
+                    mapX[x] |= mask;
+                }
+                for (int y = minY; y <= maxY; y++) {
+                    mapY[y] |= mask;
+                }
+            }
+            
+            return mapShift;
+        }
+        
         private unsafe struct OctreeRendererUnsafe {
             public int BufferShift;
             public PixelData* Pixels;
@@ -219,7 +267,15 @@ namespace OctreeSplatting {
             
             public int* TraceBuffer;
             
+            public byte* MapX;
+            public byte* MapY;
+            public int MapShift;
+            
+            public int MapThreshold;
+            
             public int Render() {
+                int mapHalf = (MapSize << MapShift) >> 1;
+                
                 var stackTop = NodeStack;
                 
                 int* traceFront = TraceBuffer;
@@ -250,6 +306,35 @@ namespace OctreeSplatting {
                                     Pixels[i].Depth = current.Z | int.MinValue;
                                     Pixels[i].Color24 = node.Data;
                                     *(traceFront++) = i;
+                                }
+                            }
+                        }
+                        continue;
+                    } else if (current.MaxSize < MapThreshold) {
+                        int mapStartX = ((current.MinX << SubpixelBits) + SubpixelHalf) - (current.X - (mapHalf >> current.Level));
+                        int mapStartY = ((current.MinY << SubpixelBits) + SubpixelHalf) - (current.Y - (mapHalf >> current.Level));
+                        int mapShift = MapShift - current.Level;
+                        
+                        int j = current.MinX + (current.MinY << BufferShift);
+                        int jEnd = current.MinX + (current.MaxY << BufferShift);
+                        int iEnd = current.MaxX + (current.MinY << BufferShift);
+                        int jStep = 1 << BufferShift;
+                        
+                        for (int my = mapStartY; j <= jEnd; j += jStep, iEnd += jStep, my += SubpixelSize) {
+                            int maskY = MapY[my >> mapShift] & node.Mask;
+                            for (int mx = mapStartX, i = j; i <= iEnd; i++, mx += SubpixelSize) {
+                                int mask = MapX[mx >> mapShift] & maskY;
+                                
+                                if ((mask != 0) & (current.Z < Pixels[i].Depth)) {
+                                    var octant = unchecked((int)(ForwardQueues[mask].Octants & 7));
+                                    
+                                    int z = current.Z + (Deltas[octant].Z >> current.Level);
+                                    
+                                    if (z < Pixels[i].Depth) {
+                                        Pixels[i].Depth = z | int.MinValue;
+                                        Pixels[i].Color24 = Octree[node.Address + octant].Data;
+                                        *(traceFront++) = i;
+                                    }
                                 }
                             }
                         }
