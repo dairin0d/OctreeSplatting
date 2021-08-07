@@ -34,7 +34,7 @@ namespace OctreeSplatting {
             if (dataPixels == null) return;
             
             var defaultValue = default(PixelData);
-            defaultValue.Depth = int.MaxValue;
+            defaultValue.Depth = SizeZ;
             defaultValue.Color32 = background;
             
             for (int y = 0; y < sizeY; y++) {
