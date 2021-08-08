@@ -27,7 +27,7 @@ namespace OctreeSplatting.Demo {
 
         private List<(Object3D, OctreeNode[])> models = new List<(Object3D, OctreeNode[])>();
 
-        private List<(Object3D, OctreeNode[], Matrix4x4)> sortedModels = new List<(Object3D, OctreeNode[], Matrix4x4)>();
+        private List<(OctreeNode[], Matrix4x4)> sortedModels = new List<(OctreeNode[], Matrix4x4)>();
 
         private OctreeRenderer renderer;
         private Renderbuffer renderbuffer;
@@ -184,21 +184,21 @@ namespace OctreeSplatting.Demo {
                 var maxZ = columnZ.W + extentZ;
                 if ((maxZ <= near) | (minZ >= far)) continue;
                 
-                sortedModels.Add((object3d, octree, matrixMV));
+                var matrixMVP = matrixMV * projectionMatrix;
+                
+                CalculateScreenSpaceMatrix(ref matrixMV, ref matrixMVP,
+                    projectionOffset, projectionScale);
+                
+                sortedModels.Add((octree, matrixMVP));
             }
             
             sortedModels.Sort((itemA, itemB) => {
-                return -itemA.Item3.M43.CompareTo(itemB.Item3.M43);
+                return itemA.Item2.M43.CompareTo(itemB.Item2.M43);
             });
             
             for (int objectID = 0; objectID < sortedModels.Count; objectID++) {
-                var (object3d, octree, matrixMV) = sortedModels[objectID];
+                (renderer.Octree, renderer.Matrix) = sortedModels[objectID];
                 
-                var matrixMVP = matrixMV * projectionMatrix;
-                
-                CalculateScreenSpaceMatrix(in matrixMV, in matrixMVP,
-                    projectionOffset, projectionScale, ref renderer.Matrix);
-                renderer.Octree = octree;
                 renderer.RootAddress = 0;
                 
                 if (renderbuffer.UseTemporalUpscaling) {
@@ -213,8 +213,8 @@ namespace OctreeSplatting.Demo {
             }
         }
         
-        private void CalculateScreenSpaceMatrix(in Matrix4x4 matrixMV, in Matrix4x4 matrixMVP,
-            Vector3 offset, Vector3 scale, ref Matrix4x4 result)
+        private void CalculateScreenSpaceMatrix(ref Matrix4x4 matrixMV, ref Matrix4x4 matrixMVP,
+            Vector3 offset, Vector3 scale)
         {
             var row1 = GetRow(matrixMVP, 1);
             var row2 = GetRow(matrixMVP, 2);
@@ -245,10 +245,10 @@ namespace OctreeSplatting.Demo {
             Y *= scale;
             Z *= scale;
             
-            result.M11 = X.X; result.M12 = X.Y; result.M13 = X.Z;
-            result.M21 = Y.X; result.M22 = Y.Y; result.M23 = Y.Z;
-            result.M31 = Z.X; result.M32 = Z.Y; result.M33 = Z.Z;
-            result.M41 = T.X; result.M42 = T.Y; result.M43 = T.Z;
+            matrixMVP.M11 = X.X; matrixMVP.M12 = X.Y; matrixMVP.M13 = X.Z; matrixMVP.M14 = 0;
+            matrixMVP.M21 = Y.X; matrixMVP.M22 = Y.Y; matrixMVP.M23 = Y.Z; matrixMVP.M24 = 0;
+            matrixMVP.M31 = Z.X; matrixMVP.M32 = Z.Y; matrixMVP.M33 = Z.Z; matrixMVP.M34 = 0;
+            matrixMVP.M41 = T.X; matrixMVP.M42 = T.Y; matrixMVP.M43 = T.Z; matrixMVP.M44 = 1;
         }
         
         private Vector4 GetRow(in Matrix4x4 matrix, int row) {
