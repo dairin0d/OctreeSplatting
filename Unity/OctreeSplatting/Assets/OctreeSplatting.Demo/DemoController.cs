@@ -200,6 +200,8 @@ namespace OctreeSplatting.Demo {
                 renderer.Octree = octree;
                 renderer.RootAddress = 0;
                 
+                renderer.MapThreshold = 3;
+                
                 renderer.Render();
             }
         }
