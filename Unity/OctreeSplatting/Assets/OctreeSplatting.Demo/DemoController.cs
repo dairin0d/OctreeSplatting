@@ -122,6 +122,8 @@ namespace OctreeSplatting.Demo {
             playerCamera.Position = player.Position - (cameraForward * cameraDistance);
             cameraFrustum.Focus = Vector3.UnitZ * cameraDistance;
             
+            renderbuffer.UseTemporalUpscaling = true;
+
             stopwatch.Restart();
 
             renderbuffer.Begin(background);
@@ -155,8 +157,8 @@ namespace OctreeSplatting.Demo {
         private void DrawOctrees(Matrix4x4 viewMatrix, Matrix4x4 projectionMatrix) {
             renderer.Viewport.MinX = 0;
             renderer.Viewport.MinY = 0;
-            renderer.Viewport.MaxX = renderbuffer.SizeX - 1;
-            renderer.Viewport.MaxY = renderbuffer.SizeY - 1;
+            renderer.Viewport.MaxX = renderbuffer.DataSizeX - 1;
+            renderer.Viewport.MaxY = renderbuffer.DataSizeY - 1;
             renderer.BufferShift = renderbuffer.ShiftX;
             renderer.Pixels = renderbuffer.DataPixels;
             
@@ -164,10 +166,12 @@ namespace OctreeSplatting.Demo {
             var far = cameraFrustum.Far;
             var projectionOffset = new Vector3(1, 1, -near);
             var projectionScale = new Vector3(
-                0.5f * renderbuffer.SizeX,
-                0.5f * renderbuffer.SizeY,
+                0.5f * renderbuffer.DataSizeX,
+                0.5f * renderbuffer.DataSizeY,
                 0.5f * renderbuffer.SizeZ / (far - near)
             );
+            
+            renderbuffer.GetSamplingOffset(out float sampleX, out float sampleY);
             
             sortedModels.Clear();
             
@@ -200,7 +204,13 @@ namespace OctreeSplatting.Demo {
                 renderer.Octree = octree;
                 renderer.RootAddress = 0;
                 
-                renderer.MapThreshold = 3;
+                if (renderbuffer.UseTemporalUpscaling) {
+                    renderer.Matrix.M41 += sampleX;
+                    renderer.Matrix.M42 += sampleY;
+                    renderer.MapThreshold = 1;
+                } else {
+                    renderer.MapThreshold = 2;
+                }
                 
                 renderer.Render();
             }

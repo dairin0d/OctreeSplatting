@@ -290,9 +290,28 @@ namespace OctreeSplatting {
                     if (current.MaxSize < 1) {
                         int i = current.MinX + (current.MinY << BufferShift);
                         if (current.Z < Pixels[i].Depth) {
-                            Pixels[i].Depth = current.Z | int.MinValue;
-                            Pixels[i].Color24 = node.Data;
-                            *(traceFront++) = i;
+                            if ((node.Mask == 0) | (MapThreshold > 1)) {
+                                Pixels[i].Depth = current.Z | int.MinValue;
+                                Pixels[i].Color24 = node.Data;
+                                *(traceFront++) = i;
+                            } else {
+                                int mx = ((current.MinX << SubpixelBits) + SubpixelHalf) - (current.X - (mapHalf >> current.Level));
+                                int my = ((current.MinY << SubpixelBits) + SubpixelHalf) - (current.Y - (mapHalf >> current.Level));
+                                int mapShift = MapShift - current.Level;
+                                int mask = MapX[mx >> mapShift] & MapY[my >> mapShift] & node.Mask;
+                                
+                                if (mask != 0) {
+                                    var octant = unchecked((int)(ForwardQueues[mask].Octants & 7));
+                                    
+                                    int z = current.Z + (Deltas[octant].Z >> current.Level);
+                                    
+                                    if (z < Pixels[i].Depth) {
+                                        Pixels[i].Depth = z | int.MinValue;
+                                        Pixels[i].Color24 = Octree[node.Address + octant].Data;
+                                        *(traceFront++) = i;
+                                    }
+                                }
+                            }
                         }
                         continue;
                     } else if (node.Mask == 0) {
