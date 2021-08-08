@@ -30,27 +30,37 @@ namespace OctreeSplatting {
             colorPixels = new Color32[sizeX * sizeY];
         }
         
-        public void Begin(Color32 background) {
+        public unsafe void Begin(Color32 background) {
             if (dataPixels == null) return;
             
             var defaultValue = default(PixelData);
             defaultValue.Depth = SizeZ;
             defaultValue.Color32 = background;
             
-            for (int y = 0; y < sizeY; y++) {
-                int dataIndex = y << shiftX;
-                for (int x = 0; x < sizeX; x++, dataIndex++) {
-                    dataPixels[dataIndex] = defaultValue;
+            fixed (PixelData* dataPtr = dataPixels)
+            {
+                for (int y = 0; y < sizeY; y++) {
+                    int dataIndex = y << shiftX;
+                    for (int x = 0; x < sizeX; x++, dataIndex++) {
+                        dataPtr[dataIndex] = defaultValue;
+                    }
                 }
             }
         }
         
-        public void End() {
-            for (int y = 0; y < sizeY; y++) {
-                int dataIndex = y << shiftX;
-                int colorIndex = y * sizeX;
-                for (int x = 0; x < sizeX; x++, dataIndex++, colorIndex++) {
-                    colorPixels[colorIndex] = dataPixels[dataIndex].Color32;
+        public unsafe void End() {
+            if (dataPixels == null) return;
+            if (colorPixels == null) return;
+            
+            fixed (PixelData* dataPtr = dataPixels)
+            fixed (Color32* colorPtr = colorPixels)
+            {
+                for (int y = 0; y < sizeY; y++) {
+                    int dataIndex = y << shiftX;
+                    int colorIndex = y * sizeX;
+                    for (int x = 0; x < sizeX; x++, dataIndex++, colorIndex++) {
+                        colorPtr[colorIndex] = dataPtr[dataIndex].Color32;
+                    }
                 }
             }
         }
