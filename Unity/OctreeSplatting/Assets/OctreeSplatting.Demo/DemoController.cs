@@ -3,6 +3,7 @@
 
 using System;
 using System.Numerics;
+using System.Threading.Tasks;
 using System.Collections.Generic;
 
 namespace OctreeSplatting.Demo {
@@ -29,7 +30,8 @@ namespace OctreeSplatting.Demo {
 
         private List<(OctreeNode[], Matrix4x4)> sortedModels = new List<(OctreeNode[], Matrix4x4)>();
 
-        private OctreeRenderer renderer;
+        private RenderingJob[] renderJobs;
+        private Task[] renderTasks;
         private Renderbuffer renderbuffer;
 
         private System.Diagnostics.Stopwatch stopwatch = new System.Diagnostics.Stopwatch();
@@ -42,10 +44,12 @@ namespace OctreeSplatting.Demo {
         private Color32 background = new Color32 {R = 50, G = 80, B = 80, A = 255};
 
         public string ViewInfo => $"P={(int)cameraPitch}, Y={(int)cameraYaw}, Z={zoomSteps}";
-        public string TimeInfo => $"{FrameTime} ({MostProbableTime}) ms/frame";
+        public string TimeInfo => $"{FrameTime} ({MostProbableTime}) ms @ {ThreadCount} thread(s)";
         public int FrameTime => (int)stopwatch.ElapsedMilliseconds;
         public double AverageFrameTime => averageFrameTime;
         public int MostProbableTime => mostProbableTime;
+
+        public int ThreadCount = 1;
 
         public int Zoom {
             get => zoomSteps;
@@ -71,7 +75,11 @@ namespace OctreeSplatting.Demo {
         }
 
         public DemoController(OctreeNode[] octree) {
-            renderer = new OctreeRenderer();
+            renderJobs = new RenderingJob[16];
+            renderTasks = new Task[renderJobs.Length];
+            for (int i = 0; i < renderJobs.Length; i++) {
+                renderJobs[i] = new RenderingJob();
+            }
             
             renderbuffer = new Renderbuffer();
             
@@ -136,6 +144,12 @@ namespace OctreeSplatting.Demo {
             frameCount++;
             averageFrameTime = (averageFrameTime * (frameCount-1) + stopwatch.ElapsedMilliseconds) / frameCount;
             
+            // Periodically clear to adapt to changing conditions
+            if ((frameCount % 500) == 0) {
+                timeHistogram.Clear();
+                timeCountMax = 0;
+            }
+            
             int time = (int)stopwatch.ElapsedMilliseconds;
             if (!timeHistogram.TryGetValue(time, out int timeCount)) timeCount = 0;
             timeCount++;
@@ -152,13 +166,32 @@ namespace OctreeSplatting.Demo {
         }
 
         private void DrawOctrees(Matrix4x4 viewMatrix, Matrix4x4 projectionMatrix) {
-            renderer.Viewport.MinX = 0;
-            renderer.Viewport.MinY = 0;
-            renderer.Viewport.MaxX = renderbuffer.DataSizeX - 1;
-            renderer.Viewport.MaxY = renderbuffer.DataSizeY - 1;
-            renderer.BufferShift = renderbuffer.ShiftX;
-            renderer.Pixels = renderbuffer.DataPixels;
+            GatherVisibleModels(viewMatrix, projectionMatrix);
             
+            ThreadCount = Math.Min(Math.Max(ThreadCount, 1), renderJobs.Length);
+            
+            int yStep = (renderbuffer.DataSizeY + ThreadCount - 1) / ThreadCount;
+            
+            for (int jobIndex = 0, y = 0; jobIndex < ThreadCount; jobIndex++, y += yStep) {
+                var renderJob = renderJobs[jobIndex];
+                
+                renderJob.Viewport.MinX = 0;
+                renderJob.Viewport.MinY = y;
+                renderJob.Viewport.MaxX = renderbuffer.DataSizeX - 1;
+                renderJob.Viewport.MaxY = Math.Min(renderbuffer.DataSizeY, y + yStep) - 1;
+                renderJob.Renderbuffer = renderbuffer;
+                renderJob.SortedModels = sortedModels;
+                
+                renderTasks[jobIndex] = new Task(renderJob.Render);
+                renderTasks[jobIndex].Start();
+            }
+            
+            for (int jobIndex = 0; jobIndex < ThreadCount; jobIndex++) {
+                renderTasks[jobIndex].Wait();
+            }
+        }
+        
+        private void GatherVisibleModels(Matrix4x4 viewMatrix, Matrix4x4 projectionMatrix) {
             var near = cameraFrustum.Near;
             var far = cameraFrustum.Far;
             var projectionOffset = new Vector3(1, 1, -near);
@@ -167,8 +200,6 @@ namespace OctreeSplatting.Demo {
                 0.5f * renderbuffer.DataSizeY,
                 0.5f * renderbuffer.SizeZ / (far - near)
             );
-            
-            renderbuffer.GetSamplingOffset(out float sampleX, out float sampleY);
             
             sortedModels.Clear();
             
@@ -195,22 +226,6 @@ namespace OctreeSplatting.Demo {
             sortedModels.Sort((itemA, itemB) => {
                 return itemA.Item2.M43.CompareTo(itemB.Item2.M43);
             });
-            
-            for (int objectID = 0; objectID < sortedModels.Count; objectID++) {
-                (renderer.Octree, renderer.Matrix) = sortedModels[objectID];
-                
-                renderer.RootAddress = 0;
-                
-                if (renderbuffer.UseTemporalUpscaling) {
-                    renderer.Matrix.M41 += sampleX;
-                    renderer.Matrix.M42 += sampleY;
-                    renderer.MapThreshold = 1;
-                } else {
-                    renderer.MapThreshold = 2;
-                }
-                
-                renderer.Render();
-            }
         }
         
         private void CalculateScreenSpaceMatrix(ref Matrix4x4 matrixMV, ref Matrix4x4 matrixMVP,
@@ -268,6 +283,38 @@ namespace OctreeSplatting.Demo {
         private void UpdateCameraAperture() {
             var scale = ApertureSize / Math.Max(renderbuffer.SizeX, renderbuffer.SizeY);
             cameraFrustum.Aperture = new Vector2(renderbuffer.SizeX * scale, renderbuffer.SizeY * scale);
+        }
+        
+        private class RenderingJob {
+            public Renderbuffer Renderbuffer;
+            public Range2D Viewport;
+            public List<(OctreeNode[], Matrix4x4)> SortedModels;
+            
+            private OctreeRenderer renderer = new OctreeRenderer();
+            
+            public void Render() {
+                renderer.Viewport = Viewport;
+                renderer.BufferShift = Renderbuffer.ShiftX;
+                renderer.Pixels = Renderbuffer.DataPixels;
+                
+                Renderbuffer.GetSamplingOffset(out float sampleX, out float sampleY);
+                
+                for (int objectID = 0; objectID < SortedModels.Count; objectID++) {
+                    (renderer.Octree, renderer.Matrix) = SortedModels[objectID];
+                    
+                    renderer.RootAddress = 0;
+                    
+                    if (Renderbuffer.UseTemporalUpscaling) {
+                        renderer.Matrix.M41 += sampleX;
+                        renderer.Matrix.M42 += sampleY;
+                        renderer.MapThreshold = 1;
+                    } else {
+                        renderer.MapThreshold = 2;
+                    }
+                    
+                    renderer.Render();
+                }
+            }
         }
     }
 }

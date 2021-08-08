@@ -114,10 +114,12 @@ namespace OctreeSplatting.OpenTKDemo {
 
             var keyboard = KeyboardState;
 
-            if (keyboard.IsKeyDown(Keys.Escape)) {
+            if (keyboard.IsKeyPressed(Keys.Escape)) {
                 Close();
                 return;
             }
+
+            demoController.ThreadCount += IntKeyPressed(keyboard, Keys.Period) - IntKeyPressed(keyboard, Keys.Comma);
 
             var movement = new Vector3(
                 IntKeyDown(keyboard, Keys.A) - IntKeyDown(keyboard, Keys.D),
@@ -141,6 +143,7 @@ namespace OctreeSplatting.OpenTKDemo {
             }
             
             int IntKeyDown(KeyboardState keyboardState, Keys key) => keyboardState.IsKeyDown(key) ? 1 : 0;
+            int IntKeyPressed(KeyboardState keyboardState, Keys key) => keyboardState.IsKeyPressed(key) ? 1 : 0;
         }
         
         protected override void OnMouseWheel(MouseWheelEventArgs e) {

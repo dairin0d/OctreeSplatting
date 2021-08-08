@@ -77,7 +77,7 @@ namespace OctreeSplatting.UnityDemo {
         }
         
         private void OnGUI() {
-            int x = 0, y = 0, panelWidth = 160, lineHeight = 20;
+            int x = 0, y = 0, panelWidth = 250, lineHeight = 20;
             
             if (demoController == null) {
                 GUI.Label(new Rect(x, y, Screen.width, lineHeight), NoDatasetMessage);
@@ -118,6 +118,8 @@ namespace OctreeSplatting.UnityDemo {
                 IntKeyDown(KeyCode.W) - IntKeyDown(KeyCode.S)
             );
             
+            demoController.ThreadCount += IntKeyPressed(KeyCode.Period) - IntKeyPressed(KeyCode.Comma);
+            
             const float cameraSpeed = 1.5f;
             movement *= cameraSpeed * Time.deltaTime;
             demoController.MoveCamera(movement.x, movement.y, movement.z);
@@ -133,6 +135,7 @@ namespace OctreeSplatting.UnityDemo {
             demoController.Zoom += (int)Input.mouseScrollDelta.y;
             
             int IntKeyDown(KeyCode keyCode) => Input.GetKey(keyCode) ? 1 : 0;
+            int IntKeyPressed(KeyCode keyCode) => Input.GetKeyDown(keyCode) ? 1 : 0;
         }
         
         private static void ResizeTexture(ref Texture2D texture, int w, int h) {
