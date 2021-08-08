@@ -39,6 +39,8 @@ namespace OctreeSplatting {
         
         public int MapThreshold = 2;
         
+        public int MaxLevel = -1;
+        
         public int DrawnPixels;
         
         private StackItem rootInfo;
@@ -107,6 +109,8 @@ namespace OctreeSplatting {
                     MapShift = mapShift,
                     
                     MapThreshold = MapThreshold,
+                    
+                    MaxLevel = MaxLevel >= 0 ? MaxLevel : int.MaxValue,
                 };
                 
                 DrawnPixels = unsafeRenderer.Render();
@@ -273,6 +277,8 @@ namespace OctreeSplatting {
             
             public int MapThreshold;
             
+            public int MaxLevel;
+            
             public int Render() {
                 int mapHalf = (MapSize << MapShift) >> 1;
                 
@@ -313,7 +319,7 @@ namespace OctreeSplatting {
                                 }
                             }
                         }
-                    } else if (node.Mask == 0) {
+                    } else if ((node.Mask == 0) | (current.Level >= MaxLevel)) {
                         int j = current.MinX + (current.MinY << BufferShift);
                         int jEnd = current.MinX + (current.MaxY << BufferShift);
                         int iEnd = current.MaxX + (current.MinY << BufferShift);

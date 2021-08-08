@@ -51,6 +51,8 @@ namespace OctreeSplatting.Demo {
 
         public int ThreadCount = 1;
 
+        public int MaxLevel = -1;
+
         public int Zoom {
             get => zoomSteps;
             set {
@@ -182,6 +184,8 @@ namespace OctreeSplatting.Demo {
                 renderJob.Renderbuffer = renderbuffer;
                 renderJob.SortedModels = sortedModels;
                 
+                renderJob.Renderer.MaxLevel = MaxLevel;
+                
                 renderTasks[jobIndex] = new Task(renderJob.Render);
                 renderTasks[jobIndex].Start();
             }
@@ -286,33 +290,32 @@ namespace OctreeSplatting.Demo {
         }
         
         private class RenderingJob {
+            public OctreeRenderer Renderer = new OctreeRenderer();
             public Renderbuffer Renderbuffer;
             public Range2D Viewport;
             public List<(OctreeNode[], Matrix4x4)> SortedModels;
             
-            private OctreeRenderer renderer = new OctreeRenderer();
-            
             public void Render() {
-                renderer.Viewport = Viewport;
-                renderer.BufferShift = Renderbuffer.ShiftX;
-                renderer.Pixels = Renderbuffer.DataPixels;
+                Renderer.Viewport = Viewport;
+                Renderer.BufferShift = Renderbuffer.ShiftX;
+                Renderer.Pixels = Renderbuffer.DataPixels;
                 
                 Renderbuffer.GetSamplingOffset(out float sampleX, out float sampleY);
                 
                 for (int objectID = 0; objectID < SortedModels.Count; objectID++) {
-                    (renderer.Octree, renderer.Matrix) = SortedModels[objectID];
+                    (Renderer.Octree, Renderer.Matrix) = SortedModels[objectID];
                     
-                    renderer.RootAddress = 0;
+                    Renderer.RootAddress = 0;
                     
                     if (Renderbuffer.UseTemporalUpscaling) {
-                        renderer.Matrix.M41 += sampleX;
-                        renderer.Matrix.M42 += sampleY;
-                        renderer.MapThreshold = 1;
+                        Renderer.Matrix.M41 += sampleX;
+                        Renderer.Matrix.M42 += sampleY;
+                        Renderer.MapThreshold = 1;
                     } else {
-                        renderer.MapThreshold = 2;
+                        Renderer.MapThreshold = 2;
                     }
                     
-                    renderer.Render();
+                    Renderer.Render();
                 }
             }
         }

@@ -120,6 +120,9 @@ namespace OctreeSplatting.UnityDemo {
             
             demoController.ThreadCount += IntKeyPressed(KeyCode.Period) - IntKeyPressed(KeyCode.Comma);
             
+            demoController.MaxLevel += IntKeyPressed(KeyCode.RightBracket) - IntKeyPressed(KeyCode.LeftBracket);
+            demoController.MaxLevel = Mathf.Max(demoController.MaxLevel, -1);
+            
             const float cameraSpeed = 1.5f;
             movement *= cameraSpeed * Time.deltaTime;
             demoController.MoveCamera(movement.x, movement.y, movement.z);

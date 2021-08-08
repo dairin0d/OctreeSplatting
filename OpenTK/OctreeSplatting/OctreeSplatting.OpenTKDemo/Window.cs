@@ -121,6 +121,9 @@ namespace OctreeSplatting.OpenTKDemo {
 
             demoController.ThreadCount += IntKeyPressed(keyboard, Keys.Period) - IntKeyPressed(keyboard, Keys.Comma);
 
+            demoController.MaxLevel += IntKeyPressed(keyboard, Keys.RightBracket) - IntKeyPressed(keyboard, Keys.LeftBracket);
+            demoController.MaxLevel = System.Math.Max(demoController.MaxLevel, -1);
+
             var movement = new Vector3(
                 IntKeyDown(keyboard, Keys.A) - IntKeyDown(keyboard, Keys.D),
                 IntKeyDown(keyboard, Keys.R) - IntKeyDown(keyboard, Keys.F),
