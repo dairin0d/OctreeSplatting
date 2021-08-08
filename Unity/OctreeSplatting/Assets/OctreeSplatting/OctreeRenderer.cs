@@ -313,7 +313,6 @@ namespace OctreeSplatting {
                                 }
                             }
                         }
-                        continue;
                     } else if (node.Mask == 0) {
                         int j = current.MinX + (current.MinY << BufferShift);
                         int jEnd = current.MinX + (current.MaxY << BufferShift);
@@ -328,7 +327,6 @@ namespace OctreeSplatting {
                                 }
                             }
                         }
-                        continue;
                     } else if (current.MaxSize < MapThreshold) {
                         int mapStartX = ((current.MinX << SubpixelBits) + SubpixelHalf) - (current.X - (mapHalf >> current.Level));
                         int mapStartY = ((current.MinY << SubpixelBits) + SubpixelHalf) - (current.Y - (mapHalf >> current.Level));
@@ -357,10 +355,7 @@ namespace OctreeSplatting {
                                 }
                             }
                         }
-                        continue;
-                    }
-                    
-                    {
+                    } else {
                         int j = current.MinX + (current.MinY << BufferShift);
                         int jEnd = current.MinX + (current.MaxY << BufferShift);
                         int iEnd = current.MaxX + (current.MinY << BufferShift);
@@ -371,51 +366,51 @@ namespace OctreeSplatting {
                             }
                             current.MinY++;
                         }
-                    }
-                    continue;
-                    OcclusionTestPassed:;
-                    
-                    var queue = ReverseQueues[node.Mask].Octants;
-                    
-                    int nextLevel = current.Level + 1;
-                    int nodeExtentX = (ExtentX >> nextLevel) - SubpixelHalf;
-                    int nodeExtentY = (ExtentY >> nextLevel) - SubpixelHalf;
-                    
-                    for (; queue != 0; queue >>= 4) {
-                        uint octant = queue & 7;
+                        continue;
+                        OcclusionTestPassed:;
                         
-                        ref var delta = ref Deltas[octant];
+                        var queue = ReverseQueues[node.Mask].Octants;
                         
-                        int x = current.X + (delta.X >> current.Level);
-                        int y = current.Y + (delta.Y >> current.Level);
+                        int nextLevel = current.Level + 1;
+                        int nodeExtentX = (ExtentX >> nextLevel) - SubpixelHalf;
+                        int nodeExtentY = (ExtentY >> nextLevel) - SubpixelHalf;
                         
-                        int minX = (x - nodeExtentX) >> SubpixelBits;
-                        int minY = (y - nodeExtentY) >> SubpixelBits;
-                        int maxX = (x + nodeExtentX) >> SubpixelBits;
-                        int maxY = (y + nodeExtentY) >> SubpixelBits;
-                        
-                        int width = maxX - minX;
-                        int height = maxY - minY;
-                        int maxSize = (width > height ? width : height);
-                        
-                        if (minX < current.MinX) minX = current.MinX;
-                        if (minY < current.MinY) minY = current.MinY;
-                        if (maxX > current.MaxX) maxX = current.MaxX;
-                        if (maxY > current.MaxY) maxY = current.MaxY;
-                        
-                        if ((maxX < minX) | (maxY < minY)) continue;
-                        
-                        ++stackTop;
-                        stackTop->MinX = minX;
-                        stackTop->MinY = minY;
-                        stackTop->MaxX = maxX;
-                        stackTop->MaxY = maxY;
-                        stackTop->MaxSize = maxSize;
-                        stackTop->X = x;
-                        stackTop->Y = y;
-                        stackTop->Z = current.Z + (delta.Z >> current.Level);
-                        stackTop->Address = node.Address + octant;
-                        stackTop->Level = nextLevel;
+                        for (; queue != 0; queue >>= 4) {
+                            uint octant = queue & 7;
+                            
+                            ref var delta = ref Deltas[octant];
+                            
+                            int x = current.X + (delta.X >> current.Level);
+                            int y = current.Y + (delta.Y >> current.Level);
+                            
+                            int minX = (x - nodeExtentX) >> SubpixelBits;
+                            int minY = (y - nodeExtentY) >> SubpixelBits;
+                            int maxX = (x + nodeExtentX) >> SubpixelBits;
+                            int maxY = (y + nodeExtentY) >> SubpixelBits;
+                            
+                            int width = maxX - minX;
+                            int height = maxY - minY;
+                            int maxSize = (width > height ? width : height);
+                            
+                            if (minX < current.MinX) minX = current.MinX;
+                            if (minY < current.MinY) minY = current.MinY;
+                            if (maxX > current.MaxX) maxX = current.MaxX;
+                            if (maxY > current.MaxY) maxY = current.MaxY;
+                            
+                            if ((maxX < minX) | (maxY < minY)) continue;
+                            
+                            ++stackTop;
+                            stackTop->MinX = minX;
+                            stackTop->MinY = minY;
+                            stackTop->MaxX = maxX;
+                            stackTop->MaxY = maxY;
+                            stackTop->MaxSize = maxSize;
+                            stackTop->X = x;
+                            stackTop->Y = y;
+                            stackTop->Z = current.Z + (delta.Z >> current.Level);
+                            stackTop->Address = node.Address + octant;
+                            stackTop->Level = nextLevel;
+                        }
                     }
                 }
                 
