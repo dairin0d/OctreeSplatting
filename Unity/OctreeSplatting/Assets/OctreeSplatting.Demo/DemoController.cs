@@ -25,12 +25,12 @@ namespace OctreeSplatting.Demo {
         private int gridExtent = 2;
         private float gridOffset = 1.2f;
 
-        private List<(Object3D, OctreeSplatting.OctreeNode[])> models = new List<(Object3D, OctreeSplatting.OctreeNode[])>();
+        private List<(Object3D, OctreeNode[])> models = new List<(Object3D, OctreeNode[])>();
 
-        private List<(Object3D, OctreeSplatting.OctreeNode[], Matrix4x4)> sortedModels = new List<(Object3D, OctreeSplatting.OctreeNode[], Matrix4x4)>();
+        private List<(Object3D, OctreeNode[], Matrix4x4)> sortedModels = new List<(Object3D, OctreeNode[], Matrix4x4)>();
 
-        private OctreeSplatting.OctreeRenderer renderer;
-        private OctreeSplatting.Renderbuffer renderbuffer;
+        private OctreeRenderer renderer;
+        private Renderbuffer renderbuffer;
 
         private System.Diagnostics.Stopwatch stopwatch = new System.Diagnostics.Stopwatch();
         private double averageFrameTime;
@@ -39,7 +39,7 @@ namespace OctreeSplatting.Demo {
         private int timeCountMax;
         private int mostProbableTime;
 
-        private OctreeSplatting.Color32 background = new OctreeSplatting.Color32 {R = 50, G = 80, B = 80, A = 255};
+        private Color32 background = new Color32 {R = 50, G = 80, B = 80, A = 255};
 
         public string ViewInfo => $"P={(int)cameraPitch}, Y={(int)cameraYaw}, Z={zoomSteps}";
         public string TimeInfo => $"{FrameTime} ({MostProbableTime}) ms/frame";
@@ -70,11 +70,10 @@ namespace OctreeSplatting.Demo {
             set => cameraYaw = value % 360f;
         }
 
-        public DemoController(OctreeSplatting.OctreeNode[] octree) {
-            renderer = new OctreeSplatting.OctreeRenderer();
-            //renderer.MaxLevel = 0;
+        public DemoController(OctreeNode[] octree) {
+            renderer = new OctreeRenderer();
             
-            renderbuffer = new OctreeSplatting.Renderbuffer();
+            renderbuffer = new Renderbuffer();
             
             player = new Object3D();
             
@@ -93,7 +92,7 @@ namespace OctreeSplatting.Demo {
             }
         }
         
-        public (int, int, OctreeSplatting.Color32[]) GetImageData() {
+        public (int, int, Color32[]) GetImageData() {
             return (renderbuffer.SizeX, renderbuffer.SizeY, renderbuffer.ColorPixels);
         }
         
@@ -122,8 +121,6 @@ namespace OctreeSplatting.Demo {
             playerCamera.Position = player.Position - (cameraForward * cameraDistance);
             cameraFrustum.Focus = Vector3.UnitZ * cameraDistance;
             
-            renderbuffer.UseTemporalUpscaling = true;
-
             stopwatch.Restart();
 
             renderbuffer.Begin(background);
