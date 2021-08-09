@@ -44,6 +44,8 @@ namespace OctreeSplatting {
         public float Dilation = 0; // in pixels
         public float MinSplatSize = 0; // relative to the root size
         
+        public SplatShape Shape = SplatShape.Rectangle;
+        
         public int DrawnPixels;
         
         private StackItem rootInfo;
@@ -106,6 +108,7 @@ namespace OctreeSplatting {
                     
                     ExtentX = extentX,
                     ExtentY = extentY,
+                    ExtentZ = extentZ,
                     Deltas = deltasPtr,
                     NodeStack = nodeStackPtr,
                     
@@ -123,6 +126,8 @@ namespace OctreeSplatting {
                     MaxLevel = Math.Min(MaxLevel >= 0 ? MaxLevel : int.MaxValue, maxLevel+1),
                     
                     Dilation = dilation,
+                    
+                    Shape = Shape,
                 };
                 
                 DrawnPixels = unsafeRenderer.Render();
@@ -192,6 +197,10 @@ namespace OctreeSplatting {
             extentX = (Math.Abs(XX) + Math.Abs(YX) + Math.Abs(ZX)) << 1;
             extentY = (Math.Abs(XY) + Math.Abs(YY) + Math.Abs(ZY)) << 1;
             extentZ = (Math.Abs(XZ) + Math.Abs(YZ) + Math.Abs(ZZ)) << 1;
+            
+            if (Shape == SplatShape.Square) {
+                extentX = extentY = Math.Max(extentX, extentY);
+            }
             
             rootInfo.Level = 0;
             rootInfo.Address = RootAddress;
@@ -273,7 +282,7 @@ namespace OctreeSplatting {
             
             public OctreeNode* Octree;
             
-            public int ExtentX, ExtentY;
+            public int ExtentX, ExtentY, ExtentZ;
             public Delta* Deltas;
             public StackItem* NodeStack;
             
@@ -291,6 +300,8 @@ namespace OctreeSplatting {
             public int MaxLevel;
             
             public int Dilation;
+            
+            public SplatShape Shape;
             
             public int Render() {
                 int mapHalf = (MapSize << MapShift) >> 1;
@@ -333,16 +344,32 @@ namespace OctreeSplatting {
                             }
                         }
                     } else if ((node.Mask == 0) | (current.Level >= MaxLevel)) {
-                        int j = current.MinX + (current.MinY << BufferShift);
-                        int jEnd = current.MinX + (current.MaxY << BufferShift);
-                        int iEnd = current.MaxX + (current.MinY << BufferShift);
-                        int jStep = 1 << BufferShift;
-                        for (; j <= jEnd; j += jStep, iEnd += jStep) {
-                            for (int i = j; i <= iEnd; i++) {
-                                if (current.Z < Pixels[i].Depth) {
-                                    Pixels[i].Depth = current.Z | int.MinValue;
-                                    Pixels[i].Color24 = node.Data;
-                                    *(traceFront++) = i;
+                        if (Shape == SplatShape.Point) {
+                            int x = current.X >> SubpixelBits;
+                            int y = current.Y >> SubpixelBits;
+                            if ((x >= current.MinX) & (x <= current.MaxX)) {
+                                if ((y >= current.MinY) & (y <= current.MaxY)) {
+                                    int z = current.Z + (ExtentZ >> (current.Level+1));
+                                    int i = x + (y << BufferShift);
+                                    if (z < Pixels[i].Depth) {
+                                        Pixels[i].Depth = current.Z | int.MinValue;
+                                        Pixels[i].Color24 = node.Data;
+                                        *(traceFront++) = i;
+                                    }
+                                }
+                            }
+                        } else {
+                            int j = current.MinX + (current.MinY << BufferShift);
+                            int jEnd = current.MinX + (current.MaxY << BufferShift);
+                            int iEnd = current.MaxX + (current.MinY << BufferShift);
+                            int jStep = 1 << BufferShift;
+                            for (; j <= jEnd; j += jStep, iEnd += jStep) {
+                                for (int i = j; i <= iEnd; i++) {
+                                    if (current.Z < Pixels[i].Depth) {
+                                        Pixels[i].Depth = current.Z | int.MinValue;
+                                        Pixels[i].Color24 = node.Data;
+                                        *(traceFront++) = i;
+                                    }
                                 }
                             }
                         }
