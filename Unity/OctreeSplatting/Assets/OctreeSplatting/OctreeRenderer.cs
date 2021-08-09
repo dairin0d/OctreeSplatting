@@ -99,6 +99,7 @@ namespace OctreeSplatting {
             fixed (OctreeNode* octreePtr = Octree)
             fixed (OctantOrder.Queue* queuesPtr = queues)
             fixed (int* traceBufferPtr = traceBuffer)
+            fixed (uint* cubeNodesPtr = CubeOctree.CubeNodes)
             {
                 var unsafeRenderer = new OctreeRendererUnsafe {
                     Viewport = Viewport,
@@ -129,6 +130,8 @@ namespace OctreeSplatting {
                     Dilation = dilation,
                     
                     Shape = Shape,
+                    
+                    CubeNodes = cubeNodesPtr,
                 };
                 
                 DrawnPixels = unsafeRenderer.Render();
@@ -160,7 +163,9 @@ namespace OctreeSplatting {
             maxGap = Math.Max(maxGap, absXX + absYX + absZX);
             maxGap = Math.Max(maxGap, absXY + absYY + absZY);
             
-            int maxShift = 29 - SubpixelBits;
+            // If the projected octree size is above this limit,
+            // there will be index-out-of-bounds errors
+            int maxShift = 28 - SubpixelBits;
             
             for (int maxLevel = 0; maxLevel <= maxShift; maxLevel++) {
                 if (maxGap < (1 << maxLevel)) return maxLevel;
@@ -305,6 +310,8 @@ namespace OctreeSplatting {
             
             public SplatShape Shape;
             
+            public uint* CubeNodes;
+            
             public int Render() {
                 int mapHalf = (MapSize << MapShift) >> 1;
                 
@@ -346,6 +353,11 @@ namespace OctreeSplatting {
                             }
                         }
                     } else if ((node.Mask == 0) | (current.Level >= MaxLevel)) {
+                        if (Shape == SplatShape.Cube) {
+                            RenderCube(stackTop + 1, ref traceFront, node.Data);
+                            continue;
+                        }
+                        
                         current.Z += ExtentZ >> current.Level;
                         
                         if (Shape == SplatShape.Point) {
@@ -468,6 +480,162 @@ namespace OctreeSplatting {
                 
                 return (int)(traceFront - TraceBuffer);
             }
+            
+            private void RenderCube(StackItem* stackTop, ref int* traceFront, Color24 color) {
+                int mapHalf = (MapSize << MapShift) >> 1;
+                
+                var stackBottom = stackTop;
+                
+                stackTop[0].Address = (ForwardQueues[255].Octants & 7) * CubeOctree.Step;
+                
+                while (stackTop >= stackBottom) {
+                    // We need a copy anyway for subnode processing
+                    var current = *stackTop;
+                    --stackTop;
+                    
+                    var nodeMask = (byte)CubeNodes[current.Address];
+                    
+                    if (current.MaxSize < 1) {
+                        int i = current.MinX + (current.MinY << BufferShift);
+                        if (current.Z < Pixels[i].Depth) {
+                            Pixels[i].Depth = current.Z | int.MinValue;
+                            Pixels[i].Color24 = color;
+                            *(traceFront++) = i;
+                        }
+                    } else if (current.MaxSize < MapThreshold) {
+                        int mapStartX = ((current.MinX << SubpixelBits) + SubpixelHalf) - (current.X - (mapHalf >> current.Level));
+                        int mapStartY = ((current.MinY << SubpixelBits) + SubpixelHalf) - (current.Y - (mapHalf >> current.Level));
+                        int mapShift = MapShift - current.Level;
+                        
+                        int j = current.MinX + (current.MinY << BufferShift);
+                        int jEnd = current.MinX + (current.MaxY << BufferShift);
+                        int iEnd = current.MaxX + (current.MinY << BufferShift);
+                        int jStep = 1 << BufferShift;
+                        
+                        for (int my = mapStartY; j <= jEnd; j += jStep, iEnd += jStep, my += SubpixelSize) {
+                            int maskY = MapY[my >> mapShift] & nodeMask;
+                            for (int mx = mapStartX, i = j; i <= iEnd; i++, mx += SubpixelSize) {
+                                int mask = MapX[mx >> mapShift] & maskY;
+                                
+                                if ((mask != 0) & (current.Z < Pixels[i].Depth)) {
+                                    var octant = unchecked((int)(ForwardQueues[mask].Octants & 7));
+                                    
+                                    int z = current.Z + (Deltas[octant].Z >> current.Level);
+                                    
+                                    if (z < Pixels[i].Depth) {
+                                        Pixels[i].Depth = z | int.MinValue;
+                                        Pixels[i].Color24 = color;
+                                        *(traceFront++) = i;
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        int j = current.MinX + (current.MinY << BufferShift);
+                        int jEnd = current.MinX + (current.MaxY << BufferShift);
+                        int iEnd = current.MaxX + (current.MinY << BufferShift);
+                        int jStep = 1 << BufferShift;
+                        for (; j <= jEnd; j += jStep, iEnd += jStep) {
+                            for (int i = j; i <= iEnd; i++) {
+                                if (current.Z < Pixels[i].Depth) goto OcclusionTestPassed;
+                            }
+                            current.MinY++;
+                        }
+                        continue;
+                        OcclusionTestPassed:;
+                        
+                        var queue = ReverseQueues[nodeMask].Octants;
+                        
+                        int nextLevel = current.Level + 1;
+                        int nodeExtentX = (ExtentX >> nextLevel) + Dilation;
+                        int nodeExtentY = (ExtentY >> nextLevel) + Dilation;
+                        
+                        for (; queue != 0; queue >>= 4) {
+                            uint octant = queue & 7;
+                            
+                            ref var delta = ref Deltas[octant];
+                            
+                            int x = current.X + (delta.X >> current.Level);
+                            int y = current.Y + (delta.Y >> current.Level);
+                            
+                            int minX = (x - nodeExtentX) >> SubpixelBits;
+                            int minY = (y - nodeExtentY) >> SubpixelBits;
+                            int maxX = (x + nodeExtentX) >> SubpixelBits;
+                            int maxY = (y + nodeExtentY) >> SubpixelBits;
+                            
+                            int width = maxX - minX;
+                            int height = maxY - minY;
+                            int maxSize = (width > height ? width : height);
+                            
+                            if (minX < current.MinX) minX = current.MinX;
+                            if (minY < current.MinY) minY = current.MinY;
+                            if (maxX > current.MaxX) maxX = current.MaxX;
+                            if (maxY > current.MaxY) maxY = current.MaxY;
+                            
+                            if ((maxX < minX) | (maxY < minY)) continue;
+                            
+                            ++stackTop;
+                            stackTop->MinX = minX;
+                            stackTop->MinY = minY;
+                            stackTop->MaxX = maxX;
+                            stackTop->MaxY = maxY;
+                            stackTop->MaxSize = maxSize;
+                            stackTop->X = x;
+                            stackTop->Y = y;
+                            stackTop->Z = current.Z + (delta.Z >> current.Level);
+                            stackTop->Address = CubeNodes[current.Address + 1 + octant];
+                            stackTop->Level = nextLevel;
+                        }
+                    }
+                }
+            }
+        }
+        
+        private static class CubeOctree {
+            private const int S = 9, __ = 0;
+            private const int C0 = 0*S, C1 = 1*S, C2 = 2*S, C3 = 3*S, C4 = 4*S, C5 = 5*S, C6 = 6*S, C7 = 7*S;
+            private const int X0 = 8*S, X1 = 9*S, X2 = 10*S, X3 = 11*S;
+            private const int Y0 = 12*S, Y1 = 13*S, Y2 = 14*S, Y3 = 15*S;
+            private const int Z0 = 16*S, Z1 = 17*S, Z2 = 18*S, Z3 = 19*S;
+            private const int XN = 20*S, XP = 21*S, YN = 22*S, YP = 23*S, ZN = 24*S, ZP = 25*S;
+            
+            public const int Step = S;
+            
+            public static uint[] CubeNodes = new uint[] {
+                // corners
+                0b01111111, C0, X0, Y0, ZN, Z0, YN, XN, __, // C0
+                0b10111111, X0, C1, ZN, Y3, YN, Z1, __, XP, // C1
+                0b11011111, Y0, ZN, C2, X1, XN, __, Z3, YP, // C2
+                0b11101111, ZN, Y3, X1, C3, __, XP, YP, Z2, // C3
+                0b11110111, Z0, YN, XN, __, C4, X3, Y1, ZP, // C4
+                0b11111011, YN, Z1, __, XP, X3, C5, ZP, Y2, // C5
+                0b11111101, XN, __, Z3, YP, Y1, ZP, C6, X2, // C6
+                0b11111110, __, XP, YP, Z2, ZP, Y2, X2, C7, // C7
+                
+                // X-edges
+                0b00111111, X0, X0, ZN, ZN, YN, YN, __, __, // X0
+                0b11001111, ZN, ZN, X1, X1, __, __, YP, YP, // X1
+                0b11111100, __, __, YP, YP, ZP, ZP, X2, X2, // X2
+                0b11110011, YN, YN, __, __, X3, X3, ZP, ZP, // X3
+                // Y-edges
+                0b01011111, Y0, ZN, Y0, ZN, XN, __, XN, __, // Y0
+                0b11110101, XN, __, XN, __, Y1, ZP, Y1, ZP, // Y1
+                0b11111010, __, XP, __, XP, ZP, Y2, ZP, Y2, // Y2
+                0b10101111, ZN, Y3, ZN, Y3, __, XP, __, XP, // Y3
+                // Z-edges
+                0b01110111, Z0, YN, XN, __, Z0, YN, XN, __, // Z0
+                0b10111011, YN, Z1, __, XP, YN, Z1, __, XP, // Z1
+                0b11101110, __, XP, YP, Z2, __, XP, YP, Z2, // Z2
+                0b11011101, XN, __, Z3, YP, XN, __, Z3, YP, // Z3
+                
+                // faces
+                0b01010101, XN, __, XN, __, XN, __, XN, __, // XN
+                0b10101010, __, XP, __, XP, __, XP, __, XP, // XP
+                0b00110011, YN, YN, __, __, YN, YN, __, __, // YN
+                0b11001100, __, __, YP, YP, __, __, YP, YP, // YP
+                0b00001111, ZN, ZN, ZN, ZN, __, __, __, __, // ZN
+                0b11110000, __, __, __, __, ZP, ZP, ZP, ZP, // ZP
+            };
         }
     }
 }
