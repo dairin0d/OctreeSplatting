@@ -346,7 +346,7 @@ namespace OctreeSplatting {
                             }
                         }
                     } else if ((node.Mask == 0) | (current.Level >= MaxLevel)) {
-                        current.Z += (ExtentZ >> (current.Level+1));
+                        current.Z += ExtentZ >> current.Level;
                         
                         if (Shape == SplatShape.Point) {
                             int dilation = (Dilation > 0 ? Dilation : 0);
