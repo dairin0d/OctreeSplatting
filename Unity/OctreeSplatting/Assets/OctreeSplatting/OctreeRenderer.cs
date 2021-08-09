@@ -346,13 +346,14 @@ namespace OctreeSplatting {
                             }
                         }
                     } else if ((node.Mask == 0) | (current.Level >= MaxLevel)) {
+                        current.Z += (ExtentZ >> (current.Level+1));
+                        
                         if (Shape == SplatShape.Point) {
                             int dilation = (Dilation > 0 ? Dilation : 0);
                             current.MinX = (current.X - dilation) >> SubpixelBits;
                             current.MinY = (current.Y - dilation) >> SubpixelBits;
                             current.MaxX = (current.X + dilation) >> SubpixelBits;
                             current.MaxY = (current.Y + dilation) >> SubpixelBits;
-                            current.Z += (ExtentZ >> (current.Level+1));
                             
                             if (current.MinX < Viewport.MinX) current.MinX = Viewport.MinX;
                             if (current.MinY < Viewport.MinY) current.MinY = Viewport.MinY;
