@@ -101,6 +101,7 @@ namespace OctreeSplatting {
             fixed (int* traceBufferPtr = traceBuffer)
             {
                 var unsafeRenderer = new OctreeRendererUnsafe {
+                    Viewport = Viewport,
                     BufferShift = BufferShift,
                     Pixels = pixelsPtr,
                     
@@ -277,6 +278,7 @@ namespace OctreeSplatting {
         }
         
         private unsafe struct OctreeRendererUnsafe {
+            public Range2D Viewport;
             public int BufferShift;
             public PixelData* Pixels;
             
@@ -345,31 +347,29 @@ namespace OctreeSplatting {
                         }
                     } else if ((node.Mask == 0) | (current.Level >= MaxLevel)) {
                         if (Shape == SplatShape.Point) {
-                            int x = current.X >> SubpixelBits;
-                            int y = current.Y >> SubpixelBits;
-                            if ((x >= current.MinX) & (x <= current.MaxX)) {
-                                if ((y >= current.MinY) & (y <= current.MaxY)) {
-                                    int z = current.Z + (ExtentZ >> (current.Level+1));
-                                    int i = x + (y << BufferShift);
-                                    if (z < Pixels[i].Depth) {
-                                        Pixels[i].Depth = current.Z | int.MinValue;
-                                        Pixels[i].Color24 = node.Data;
-                                        *(traceFront++) = i;
-                                    }
-                                }
-                            }
-                        } else {
-                            int j = current.MinX + (current.MinY << BufferShift);
-                            int jEnd = current.MinX + (current.MaxY << BufferShift);
-                            int iEnd = current.MaxX + (current.MinY << BufferShift);
-                            int jStep = 1 << BufferShift;
-                            for (; j <= jEnd; j += jStep, iEnd += jStep) {
-                                for (int i = j; i <= iEnd; i++) {
-                                    if (current.Z < Pixels[i].Depth) {
-                                        Pixels[i].Depth = current.Z | int.MinValue;
-                                        Pixels[i].Color24 = node.Data;
-                                        *(traceFront++) = i;
-                                    }
+                            int dilation = (Dilation > 0 ? Dilation : 0);
+                            current.MinX = (current.X - dilation) >> SubpixelBits;
+                            current.MinY = (current.Y - dilation) >> SubpixelBits;
+                            current.MaxX = (current.X + dilation) >> SubpixelBits;
+                            current.MaxY = (current.Y + dilation) >> SubpixelBits;
+                            current.Z += (ExtentZ >> (current.Level+1));
+                            
+                            if (current.MinX < Viewport.MinX) current.MinX = Viewport.MinX;
+                            if (current.MinY < Viewport.MinY) current.MinY = Viewport.MinY;
+                            if (current.MaxX > Viewport.MaxX) current.MaxX = Viewport.MaxX;
+                            if (current.MaxY > Viewport.MaxY) current.MaxY = Viewport.MaxY;
+                        }
+                        
+                        int j = current.MinX + (current.MinY << BufferShift);
+                        int jEnd = current.MinX + (current.MaxY << BufferShift);
+                        int iEnd = current.MaxX + (current.MinY << BufferShift);
+                        int jStep = 1 << BufferShift;
+                        for (; j <= jEnd; j += jStep, iEnd += jStep) {
+                            for (int i = j; i <= iEnd; i++) {
+                                if (current.Z < Pixels[i].Depth) {
+                                    Pixels[i].Depth = current.Z | int.MinValue;
+                                    Pixels[i].Color24 = node.Data;
+                                    *(traceFront++) = i;
                                 }
                             }
                         }
