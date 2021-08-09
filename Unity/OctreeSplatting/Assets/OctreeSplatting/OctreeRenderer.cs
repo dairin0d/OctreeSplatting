@@ -71,9 +71,12 @@ namespace OctreeSplatting {
             
             int dilation = (int)(Math.Max(AbsoluteDilation, 0) * SubpixelSize);
             dilation += (int)(Math.Min(Math.Max(RelativeDilation, 0), 1) * Math.Max(extentX, extentY));
-            dilation -= SubpixelHalf;
             
-            CalculateRootRect(dilation);
+            // Trying to support dilated cubes is quite troublesome.
+            // Better make sure that they're mutually exclusive.
+            if (Shape == SplatShape.Cube) dilation = 0;
+            
+            CalculateRootRect(dilation - SubpixelHalf);
             
             if (rootInfo.Z < 0) return;
             if ((rootInfo.MaxX < rootInfo.MinX) | (rootInfo.MaxY < rootInfo.MinY)) return;
@@ -127,7 +130,7 @@ namespace OctreeSplatting {
                     
                     MaxLevel = Math.Min(MaxLevel >= 0 ? MaxLevel : int.MaxValue, maxLevel+1),
                     
-                    Dilation = dilation,
+                    Dilation = dilation - SubpixelHalf,
                     
                     Shape = Shape,
                     
