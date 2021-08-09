@@ -124,8 +124,8 @@ namespace OctreeSplatting.OpenTKDemo {
             demoController.MaxLevel += IntKeyPressed(keyboard, Keys.RightBracket) - IntKeyPressed(keyboard, Keys.LeftBracket);
             demoController.MaxLevel = System.Math.Max(demoController.MaxLevel, -1);
 
-            demoController.MinSplatSize += (IntKeyPressed(keyboard, Keys.Equal) - IntKeyPressed(keyboard, Keys.Minus)) / (float)(1 << 14);
-            demoController.MinSplatSize = System.Math.Max(demoController.MinSplatSize, 0);
+            demoController.RelativeDilation += (IntKeyPressed(keyboard, Keys.Equal) - IntKeyPressed(keyboard, Keys.Minus)) / (float)(1 << 14);
+            demoController.RelativeDilation = System.Math.Max(demoController.RelativeDilation, 0);
 
             var movement = new Vector3(
                 IntKeyDown(keyboard, Keys.A) - IntKeyDown(keyboard, Keys.D),

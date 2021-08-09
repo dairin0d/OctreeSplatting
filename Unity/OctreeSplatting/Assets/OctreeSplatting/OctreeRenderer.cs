@@ -41,8 +41,8 @@ namespace OctreeSplatting {
         
         public int MaxLevel = -1;
         
-        public float Dilation = 0; // in pixels
-        public float MinSplatSize = 0; // relative to the root size
+        public float AbsoluteDilation = 0; // in pixels
+        public float RelativeDilation = 0; // relative to the root size
         
         public SplatShape Shape = SplatShape.Rectangle;
         
@@ -69,8 +69,8 @@ namespace OctreeSplatting {
             
             CalculateRootInfo();
             
-            int dilation = (int)(Math.Max(Dilation, 0) * SubpixelSize);
-            dilation += (int)(Math.Min(Math.Max(MinSplatSize, 0), 1) * Math.Max(extentX, extentY));
+            int dilation = (int)(Math.Max(AbsoluteDilation, 0) * SubpixelSize);
+            dilation += (int)(Math.Min(Math.Max(RelativeDilation, 0), 1) * Math.Max(extentX, extentY));
             dilation -= SubpixelHalf;
             
             CalculateRootRect(dilation);
