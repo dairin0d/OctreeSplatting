@@ -346,34 +346,7 @@ namespace OctreeSplatting {
                             }
                         }
                     } else if ((node.Mask == 0) | (current.Level >= MaxLevel)) {
-                        current.Z += ExtentZ >> current.Level;
-                        
-                        if (Shape == SplatShape.Point) {
-                            int dilation = (Dilation > 0 ? Dilation : 0);
-                            current.MinX = (current.X - dilation) >> SubpixelBits;
-                            current.MinY = (current.Y - dilation) >> SubpixelBits;
-                            current.MaxX = (current.X + dilation) >> SubpixelBits;
-                            current.MaxY = (current.Y + dilation) >> SubpixelBits;
-                            
-                            if (current.MinX < Viewport.MinX) current.MinX = Viewport.MinX;
-                            if (current.MinY < Viewport.MinY) current.MinY = Viewport.MinY;
-                            if (current.MaxX > Viewport.MaxX) current.MaxX = Viewport.MaxX;
-                            if (current.MaxY > Viewport.MaxY) current.MaxY = Viewport.MaxY;
-                        }
-                        
-                        int j = current.MinX + (current.MinY << BufferShift);
-                        int jEnd = current.MinX + (current.MaxY << BufferShift);
-                        int iEnd = current.MaxX + (current.MinY << BufferShift);
-                        int jStep = 1 << BufferShift;
-                        for (; j <= jEnd; j += jStep, iEnd += jStep) {
-                            for (int i = j; i <= iEnd; i++) {
-                                if (current.Z < Pixels[i].Depth) {
-                                    Pixels[i].Depth = current.Z | int.MinValue;
-                                    Pixels[i].Color24 = node.Data;
-                                    *(traceFront++) = i;
-                                }
-                            }
-                        }
+                        DrawSplat(stackTop, ref current, ref node, ref traceFront);
                     } else if (current.MaxSize < MapThreshold) {
                         int mapStartX = ((current.MinX << SubpixelBits) + SubpixelHalf) - (current.X - (mapHalf >> current.Level));
                         int mapStartY = ((current.MinY << SubpixelBits) + SubpixelHalf) - (current.Y - (mapHalf >> current.Level));
@@ -467,6 +440,37 @@ namespace OctreeSplatting {
                 }
                 
                 return (int)(traceFront - TraceBuffer);
+            }
+            
+            private void DrawSplat(StackItem* stackTop, ref StackItem current, ref OctreeNode node, ref int* traceFront) {
+                current.Z += ExtentZ >> current.Level;
+                
+                if (Shape == SplatShape.Point) {
+                    int dilation = (Dilation > 0 ? Dilation : 0);
+                    current.MinX = (current.X - dilation) >> SubpixelBits;
+                    current.MinY = (current.Y - dilation) >> SubpixelBits;
+                    current.MaxX = (current.X + dilation) >> SubpixelBits;
+                    current.MaxY = (current.Y + dilation) >> SubpixelBits;
+                    
+                    if (current.MinX < Viewport.MinX) current.MinX = Viewport.MinX;
+                    if (current.MinY < Viewport.MinY) current.MinY = Viewport.MinY;
+                    if (current.MaxX > Viewport.MaxX) current.MaxX = Viewport.MaxX;
+                    if (current.MaxY > Viewport.MaxY) current.MaxY = Viewport.MaxY;
+                }
+                
+                int j = current.MinX + (current.MinY << BufferShift);
+                int jEnd = current.MinX + (current.MaxY << BufferShift);
+                int iEnd = current.MaxX + (current.MinY << BufferShift);
+                int jStep = 1 << BufferShift;
+                for (; j <= jEnd; j += jStep, iEnd += jStep) {
+                    for (int i = j; i <= iEnd; i++) {
+                        if (current.Z < Pixels[i].Depth) {
+                            Pixels[i].Depth = current.Z | int.MinValue;
+                            Pixels[i].Color24 = node.Data;
+                            *(traceFront++) = i;
+                        }
+                    }
+                }
             }
         }
     }
