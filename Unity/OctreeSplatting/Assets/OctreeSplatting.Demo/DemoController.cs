@@ -52,6 +52,8 @@ namespace OctreeSplatting.Demo {
         public int ThreadCount = 1;
 
         public int MaxLevel = -1;
+        public float Dilation = 0;
+        public float MinSplatSize = 0;
 
         public int Zoom {
             get => zoomSteps;
@@ -185,6 +187,8 @@ namespace OctreeSplatting.Demo {
                 renderJob.SortedModels = sortedModels;
                 
                 renderJob.Renderer.MaxLevel = MaxLevel;
+                renderJob.Renderer.Dilation = Dilation;
+                renderJob.Renderer.MinSplatSize = MinSplatSize;
                 
                 renderTasks[jobIndex] = new Task(renderJob.Render);
                 renderTasks[jobIndex].Start();

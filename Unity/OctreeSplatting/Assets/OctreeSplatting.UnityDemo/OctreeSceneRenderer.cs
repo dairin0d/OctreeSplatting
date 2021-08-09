@@ -123,6 +123,9 @@ namespace OctreeSplatting.UnityDemo {
             demoController.MaxLevel += IntKeyPressed(KeyCode.RightBracket) - IntKeyPressed(KeyCode.LeftBracket);
             demoController.MaxLevel = Mathf.Max(demoController.MaxLevel, -1);
             
+            demoController.MinSplatSize += (IntKeyPressed(KeyCode.Equals) - IntKeyPressed(KeyCode.Minus)) / (float)(1 << 14);
+            demoController.MinSplatSize = Mathf.Max(demoController.MinSplatSize, 0);
+            
             const float cameraSpeed = 1.5f;
             movement *= cameraSpeed * Time.deltaTime;
             demoController.MoveCamera(movement.x, movement.y, movement.z);

@@ -41,6 +41,9 @@ namespace OctreeSplatting {
         
         public int MaxLevel = -1;
         
+        public float Dilation = 0; // in pixels
+        public float MinSplatSize = 0; // relative to the root size
+        
         public int DrawnPixels;
         
         private StackItem rootInfo;
@@ -63,6 +66,13 @@ namespace OctreeSplatting {
             CalculateIntMatrix(maxLevel);
             
             CalculateRootInfo();
+            
+            int dilation = (int)(Math.Max(Dilation, 0) * SubpixelSize);
+            dilation += (int)(Math.Min(Math.Max(MinSplatSize, 0), 1) * Math.Max(extentX, extentY));
+            dilation -= SubpixelHalf;
+            
+            CalculateRootRect(dilation);
+            
             if (rootInfo.Z < 0) return;
             if ((rootInfo.MaxX < rootInfo.MinX) | (rootInfo.MaxY < rootInfo.MinY)) return;
             
@@ -110,7 +120,9 @@ namespace OctreeSplatting {
                     
                     MapThreshold = MapThreshold,
                     
-                    MaxLevel = MaxLevel >= 0 ? MaxLevel : int.MaxValue,
+                    MaxLevel = Math.Min(MaxLevel >= 0 ? MaxLevel : int.MaxValue, maxLevel+1),
+                    
+                    Dilation = dilation,
                 };
                 
                 DrawnPixels = unsafeRenderer.Render();
@@ -186,12 +198,11 @@ namespace OctreeSplatting {
             rootInfo.X = TX;
             rootInfo.Y = TY;
             rootInfo.Z = TZ - extentZ;
-            CalculateRootRect();
         }
         
-        private void CalculateRootRect() {
-            int nodeExtentX = extentX - SubpixelHalf;
-            int nodeExtentY = extentY - SubpixelHalf;
+        private void CalculateRootRect(int dilation) {
+            int nodeExtentX = extentX + dilation;
+            int nodeExtentY = extentY + dilation;
             
             rootInfo.MinX = (rootInfo.X - nodeExtentX) >> SubpixelBits;
             rootInfo.MinY = (rootInfo.Y - nodeExtentY) >> SubpixelBits;
@@ -278,6 +289,8 @@ namespace OctreeSplatting {
             public int MapThreshold;
             
             public int MaxLevel;
+            
+            public int Dilation;
             
             public int Render() {
                 int mapHalf = (MapSize << MapShift) >> 1;
@@ -378,8 +391,8 @@ namespace OctreeSplatting {
                         var queue = ReverseQueues[node.Mask].Octants;
                         
                         int nextLevel = current.Level + 1;
-                        int nodeExtentX = (ExtentX >> nextLevel) - SubpixelHalf;
-                        int nodeExtentY = (ExtentY >> nextLevel) - SubpixelHalf;
+                        int nodeExtentX = (ExtentX >> nextLevel) + Dilation;
+                        int nodeExtentY = (ExtentY >> nextLevel) + Dilation;
                         
                         for (; queue != 0; queue >>= 4) {
                             uint octant = queue & 7;
