@@ -118,12 +118,28 @@ namespace OctreeSplatting.UnityDemo {
                 IntKeyDown(KeyCode.W) - IntKeyDown(KeyCode.S)
             );
             
+            if (Input.GetKeyDown(KeyCode.F1)) {
+                demoController.Shape = SplatShape.Point;
+            } else if (Input.GetKeyDown(KeyCode.F2)) {
+                demoController.Shape = SplatShape.Rectangle;
+            } else if (Input.GetKeyDown(KeyCode.F3)) {
+                demoController.Shape = SplatShape.Square;
+            } else if (Input.GetKeyDown(KeyCode.F4)) {
+                demoController.Shape = SplatShape.Circle;
+            } else if (Input.GetKeyDown(KeyCode.F5)) {
+                demoController.Shape = SplatShape.Cube;
+            }
+            
+            if (Input.GetKeyDown(KeyCode.Return)) {
+                demoController.UseUpscaling = !demoController.UseUpscaling;
+            }
+            
             demoController.ThreadCount += IntKeyPressed(KeyCode.Period) - IntKeyPressed(KeyCode.Comma);
             
             demoController.MaxLevel += IntKeyPressed(KeyCode.RightBracket) - IntKeyPressed(KeyCode.LeftBracket);
             demoController.MaxLevel = Mathf.Max(demoController.MaxLevel, -1);
             
-            demoController.RelativeDilation += (IntKeyPressed(KeyCode.Equals) - IntKeyPressed(KeyCode.Minus)) / (float)(1 << 14);
+            demoController.RelativeDilation += (IntKeyDown(KeyCode.Equals) - IntKeyDown(KeyCode.Minus)) / (float)(1 << 14);
             demoController.RelativeDilation = Mathf.Max(demoController.RelativeDilation, 0);
             
             const float cameraSpeed = 1.5f;

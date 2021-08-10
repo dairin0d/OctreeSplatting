@@ -54,6 +54,8 @@ namespace OctreeSplatting.Demo {
         public int MaxLevel = -1;
         public float AbsoluteDilation = 0;
         public float RelativeDilation = 0;
+        public bool UseUpscaling = false;
+        public SplatShape Shape = SplatShape.Rectangle;
 
         public int Zoom {
             get => zoomSteps;
@@ -135,6 +137,8 @@ namespace OctreeSplatting.Demo {
             
             stopwatch.Restart();
 
+            renderbuffer.UseTemporalUpscaling = UseUpscaling;
+
             renderbuffer.Begin(background);
             DrawOctrees(playerCamera.Inverse, cameraFrustum.Matrix);
             renderbuffer.End();
@@ -189,6 +193,7 @@ namespace OctreeSplatting.Demo {
                 renderJob.Renderer.MaxLevel = MaxLevel;
                 renderJob.Renderer.AbsoluteDilation = AbsoluteDilation;
                 renderJob.Renderer.RelativeDilation = RelativeDilation;
+                renderJob.Renderer.Shape = Shape;
                 
                 renderTasks[jobIndex] = new Task(renderJob.Render);
                 renderTasks[jobIndex].Start();

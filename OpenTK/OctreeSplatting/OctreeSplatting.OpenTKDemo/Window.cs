@@ -118,13 +118,29 @@ namespace OctreeSplatting.OpenTKDemo {
                 Close();
                 return;
             }
+            
+            if (keyboard.IsKeyPressed(Keys.F1)) {
+                demoController.Shape = SplatShape.Point;
+            } else if (keyboard.IsKeyPressed(Keys.F2)) {
+                demoController.Shape = SplatShape.Rectangle;
+            } else if (keyboard.IsKeyPressed(Keys.F3)) {
+                demoController.Shape = SplatShape.Square;
+            } else if (keyboard.IsKeyPressed(Keys.F4)) {
+                demoController.Shape = SplatShape.Circle;
+            } else if (keyboard.IsKeyPressed(Keys.F5)) {
+                demoController.Shape = SplatShape.Cube;
+            }
+
+            if (keyboard.IsKeyPressed(Keys.Enter)) {
+                demoController.UseUpscaling = !demoController.UseUpscaling;
+            }
 
             demoController.ThreadCount += IntKeyPressed(keyboard, Keys.Period) - IntKeyPressed(keyboard, Keys.Comma);
 
             demoController.MaxLevel += IntKeyPressed(keyboard, Keys.RightBracket) - IntKeyPressed(keyboard, Keys.LeftBracket);
             demoController.MaxLevel = System.Math.Max(demoController.MaxLevel, -1);
 
-            demoController.RelativeDilation += (IntKeyPressed(keyboard, Keys.Equal) - IntKeyPressed(keyboard, Keys.Minus)) / (float)(1 << 14);
+            demoController.RelativeDilation += (IntKeyDown(keyboard, Keys.Equal) - IntKeyDown(keyboard, Keys.Minus)) / (float)(1 << 14);
             demoController.RelativeDilation = System.Math.Max(demoController.RelativeDilation, 0);
 
             var movement = new Vector3(

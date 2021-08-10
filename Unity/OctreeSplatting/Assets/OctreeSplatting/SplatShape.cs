@@ -6,6 +6,7 @@ namespace OctreeSplatting {
         Point,
         Rectangle,
         Square,
+        Circle,
         Cube,
     }
 }

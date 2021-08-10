@@ -203,13 +203,29 @@ namespace OctreeSplatting {
         }
         
         private void CalculateRootInfo() {
-            extentX = (Math.Abs(XX) + Math.Abs(YX) + Math.Abs(ZX)) << 1;
-            extentY = (Math.Abs(XY) + Math.Abs(YY) + Math.Abs(ZY)) << 1;
-            extentZ = (Math.Abs(XZ) + Math.Abs(YZ) + Math.Abs(ZZ)) << 1;
-            
-            if (Shape == SplatShape.Square) {
-                extentX = extentY = Math.Max(extentX, extentY);
+            if (Shape == SplatShape.Circle) {
+                // Diagonals are symmetric, so we only need 4 corners
+                float maxDiagonal2 = 0;
+                int z = 1;
+                for (int y = -1; y <= 1; y += 2) {
+                    for (int x = -1; x <= 1; x += 2) {
+                        float diagonalX = (XX * x + YX * y + ZX * z) << 1;
+                        float diagonalY = (XY * x + YY * y + ZY * z) << 1;
+                        float diagonal2 = diagonalX*diagonalX + diagonalY*diagonalY;
+                        if (maxDiagonal2 < diagonal2) maxDiagonal2 = diagonal2;
+                    }
+                }
+                extentX = extentY = (int)(Math.Sqrt(maxDiagonal2) + 1);
+            } else {
+                extentX = (Math.Abs(XX) + Math.Abs(YX) + Math.Abs(ZX)) << 1;
+                extentY = (Math.Abs(XY) + Math.Abs(YY) + Math.Abs(ZY)) << 1;
+                
+                if (Shape == SplatShape.Square) {
+                    extentX = extentY = Math.Max(extentX, extentY);
+                }
             }
+            
+            extentZ = (Math.Abs(XZ) + Math.Abs(YZ) + Math.Abs(ZZ)) << 1;
             
             rootInfo.Level = 0;
             rootInfo.Address = RootAddress;
@@ -363,6 +379,11 @@ namespace OctreeSplatting {
                         
                         current.Z += ExtentZ >> current.Level;
                         
+                        if (Shape == SplatShape.Circle) {
+                            DrawCircle(ref current, ref traceFront, node.Data);
+                            continue;
+                        }
+                        
                         if (Shape == SplatShape.Point) {
                             int dilation = (Dilation > 0 ? Dilation : 0);
                             current.MinX = (current.X - dilation) >> SubpixelBits;
@@ -482,6 +503,41 @@ namespace OctreeSplatting {
                 }
                 
                 return (int)(traceFront - TraceBuffer);
+            }
+            
+            private void DrawCircle(ref StackItem current, ref int* traceFront, Color24 color) {
+                // For circle, ExtentX and ExtentY are always equal
+                int radius = (ExtentX >> current.Level) + Dilation + SubpixelHalf;
+                
+                const int MagnitudeLimit = 23170; // (2 * 23170)^2 < 2^31
+                int circleShift = SubpixelBits;
+                for (; (radius > MagnitudeLimit) | ((1 << circleShift) > MagnitudeLimit); circleShift--, radius >>= 1);
+                
+                int radius2 = radius * radius;
+                
+                int startDX = (((current.MinX << SubpixelBits) + SubpixelHalf) - current.X) >> (SubpixelBits - circleShift);
+                int startDY = (((current.MinY << SubpixelBits) + SubpixelHalf) - current.Y) >> (SubpixelBits - circleShift);
+                int stepAdd = 1 << circleShift, stepShift = circleShift + 1, stepAdd2 = stepAdd * stepAdd;
+                int distance2Y = startDX * startDX + startDY * startDY;
+                
+                int j = current.MinX + (current.MinY << BufferShift);
+                int jEnd = current.MinX + (current.MaxY << BufferShift);
+                int iEnd = current.MaxX + (current.MinY << BufferShift);
+                int jStep = 1 << BufferShift;
+                for (; j <= jEnd; j += jStep, iEnd += jStep) {
+                    int distance2 = distance2Y, rowDX = startDX;
+                    for (int i = j; i <= iEnd; i++) {
+                        if ((distance2 <= radius2) & (current.Z < Pixels[i].Depth)) {
+                            Pixels[i].Depth = current.Z | int.MinValue;
+                            Pixels[i].Color24 = color;
+                            *(traceFront++) = i;
+                        }
+                        distance2 += (rowDX << stepShift) + stepAdd2;
+                        rowDX += stepAdd;
+                    }
+                    distance2Y += (startDY << stepShift) + stepAdd2;
+                    startDY += stepAdd;
+                }
             }
             
             private void RenderCube(StackItem* stackTop, ref int* traceFront, Color24 color) {
