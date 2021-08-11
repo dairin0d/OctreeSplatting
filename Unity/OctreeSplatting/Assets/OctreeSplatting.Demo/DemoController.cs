@@ -26,9 +26,9 @@ namespace OctreeSplatting.Demo {
         private int gridExtent = 2;
         private float gridOffset = 1.2f;
 
-        private List<(Object3D, OctreeNode[])> models = new List<(Object3D, OctreeNode[])>();
+        private List<Object3D> models = new List<Object3D>();
 
-        private List<(OctreeNode[], Matrix4x4)> sortedModels = new List<(OctreeNode[], Matrix4x4)>();
+        private List<Object3D> sortedModels = new List<Object3D>();
 
         private RenderingJob[] renderJobs;
         private Task[] renderTasks;
@@ -98,10 +98,10 @@ namespace OctreeSplatting.Demo {
 
             for (int ix = -gridExtent; ix <= gridExtent; ix++) {
                 for (int iz = -gridExtent; iz <= gridExtent; iz++) {
-                    var obj3D = new Object3D();
+                    var obj3D = new Object3D(octree);
                     obj3D.Position = new Vector3(ix, 0, iz) * gridOffset;
                     obj3D.Rotation = modelRotation;
-                    models.Add((obj3D, octree));
+                    models.Add(obj3D);
                 }
             }
         }
@@ -216,8 +216,10 @@ namespace OctreeSplatting.Demo {
             
             sortedModels.Clear();
             
-            foreach (var (object3d, octree) in models) {
-                if (octree == null) continue;
+            foreach (var object3d in models) {
+                if (object3d.Octree == null) continue;
+                if (object3d.Cage == null) continue;
+                if (object3d.Cage.Length < 8) continue;
                 
                 var matrixMV = object3d.Matrix * viewMatrix;
                 
@@ -228,16 +230,16 @@ namespace OctreeSplatting.Demo {
                 var maxZ = columnZ.W + extentZ;
                 if ((maxZ <= near) | (minZ >= far)) continue;
                 
-                var matrixMVP = matrixMV * projectionMatrix;
+                object3d.RenderingMatrix = matrixMV * projectionMatrix;
                 
-                CalculateScreenSpaceMatrix(ref matrixMV, ref matrixMVP,
+                CalculateScreenSpaceMatrix(ref matrixMV, ref object3d.RenderingMatrix,
                     projectionOffset, projectionScale);
                 
-                sortedModels.Add((octree, matrixMVP));
+                sortedModels.Add(object3d);
             }
             
             sortedModels.Sort((itemA, itemB) => {
-                return itemA.Item2.M43.CompareTo(itemB.Item2.M43);
+                return itemA.RenderingMatrix.M43.CompareTo(itemB.RenderingMatrix.M43);
             });
         }
         
@@ -302,7 +304,7 @@ namespace OctreeSplatting.Demo {
             public OctreeRenderer Renderer = new OctreeRenderer();
             public Renderbuffer Renderbuffer;
             public Range2D Viewport;
-            public List<(OctreeNode[], Matrix4x4)> SortedModels;
+            public List<Object3D> SortedModels;
             
             public void Render() {
                 Renderer.Viewport = Viewport;
@@ -312,8 +314,10 @@ namespace OctreeSplatting.Demo {
                 Renderbuffer.GetSamplingOffset(out float sampleX, out float sampleY);
                 
                 for (int objectID = 0; objectID < SortedModels.Count; objectID++) {
-                    (Renderer.Octree, Renderer.Matrix) = SortedModels[objectID];
+                    var obj3D = SortedModels[objectID];
                     
+                    Renderer.Octree = obj3D.Octree;
+                    Renderer.Matrix = obj3D.RenderingMatrix;
                     Renderer.RootAddress = 0;
                     
                     if (Renderbuffer.UseTemporalUpscaling) {
