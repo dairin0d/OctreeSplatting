@@ -98,10 +98,11 @@ namespace OctreeSplatting.Demo {
 
             for (int ix = -gridExtent; ix <= gridExtent; ix++) {
                 for (int iz = -gridExtent; iz <= gridExtent; iz++) {
-                    var obj3D = new Object3D(octree);
-                    obj3D.Position = new Vector3(ix, 0, iz) * gridOffset;
-                    obj3D.Rotation = modelRotation;
-                    models.Add(obj3D);
+                    var object3d = new Object3D(octree);
+                    object3d.Position = new Vector3(ix, 0, iz) * gridOffset;
+                    object3d.Rotation = modelRotation;
+                    object3d.Scale = Vector3.One * 0.5f;
+                    models.Add(object3d);
                 }
             }
         }
@@ -148,6 +149,11 @@ namespace OctreeSplatting.Demo {
             UpdateTimeInfo();
         }
 
+        private void UpdateCameraAperture() {
+            var scale = ApertureSize / Math.Max(renderbuffer.SizeX, renderbuffer.SizeY);
+            cameraFrustum.Aperture = new Vector2(renderbuffer.SizeX * scale, renderbuffer.SizeY * scale);
+        }
+        
         private void UpdateTimeInfo() {
             frameCount++;
             averageFrameTime = (averageFrameTime * (frameCount-1) + stopwatch.ElapsedMilliseconds) / frameCount;
@@ -195,109 +201,91 @@ namespace OctreeSplatting.Demo {
                 renderJob.Renderer.RelativeDilation = RelativeDilation;
                 renderJob.Renderer.Shape = Shape;
                 
-                renderTasks[jobIndex] = new Task(renderJob.Render);
-                renderTasks[jobIndex].Start();
+                if (ThreadCount > 1) {
+                    renderTasks[jobIndex] = new Task(renderJob.Render);
+                    renderTasks[jobIndex].Start();
+                } else {
+                    // Main-thread stuff is easier to debug
+                    renderJob.Render();
+                }
             }
             
-            for (int jobIndex = 0; jobIndex < ThreadCount; jobIndex++) {
-                renderTasks[jobIndex].Wait();
+            if (ThreadCount > 1) {
+                for (int jobIndex = 0; jobIndex < ThreadCount; jobIndex++) {
+                    renderTasks[jobIndex].Wait();
+                }
             }
         }
         
         private void GatherVisibleModels(Matrix4x4 viewMatrix, Matrix4x4 projectionMatrix) {
             var near = cameraFrustum.Near;
             var far = cameraFrustum.Far;
-            var projectionOffset = new Vector3(1, 1, -near);
-            var projectionScale = new Vector3(
+            
+            var offset = new Vector3(0, 0, -near);
+            var scale = new Vector3(
                 0.5f * renderbuffer.DataSizeX,
                 0.5f * renderbuffer.DataSizeY,
-                0.5f * renderbuffer.SizeZ / (far - near)
+                renderbuffer.SizeZ / (far - near)
             );
+            
+            float zMax = renderbuffer.SizeZ;
             
             sortedModels.Clear();
             
             foreach (var object3d in models) {
                 if (object3d.Octree == null) continue;
-                if (object3d.Cage == null) continue;
-                if (object3d.Cage.Length < 8) continue;
                 
-                var matrixMV = object3d.Matrix * viewMatrix;
+                ProjectCage(object3d, ref viewMatrix, ref projectionMatrix, offset, scale);
                 
-                // make sure that forward direction is positive
-                var columnZ = -(new Vector4(matrixMV.M13, matrixMV.M23, matrixMV.M33, matrixMV.M43));
-                var extentZ = Math.Abs(columnZ.X) + Math.Abs(columnZ.Y) + Math.Abs(columnZ.Z);
-                var minZ = columnZ.W - extentZ;
-                var maxZ = columnZ.W + extentZ;
-                if ((maxZ <= near) | (minZ >= far)) continue;
+                if (object3d.ProjectedMin.Z >= zMax) continue;
+                if (object3d.ProjectedMax.Z <= 0) continue;
                 
-                object3d.RenderingMatrix = matrixMV * projectionMatrix;
+                if (object3d.ProjectedMin.X >= scale.X) continue;
+                if (object3d.ProjectedMax.X <= -scale.X) continue;
                 
-                CalculateScreenSpaceMatrix(ref matrixMV, ref object3d.RenderingMatrix,
-                    projectionOffset, projectionScale);
+                if (object3d.ProjectedMin.Y >= scale.Y) continue;
+                if (object3d.ProjectedMax.Y <= -scale.Y) continue;
                 
                 sortedModels.Add(object3d);
             }
             
             sortedModels.Sort((itemA, itemB) => {
-                return itemA.RenderingMatrix.M43.CompareTo(itemB.RenderingMatrix.M43);
+                return itemA.ProjectedMin.Z.CompareTo(itemB.ProjectedMin.Z);
             });
         }
         
-        private void CalculateScreenSpaceMatrix(ref Matrix4x4 matrixMV, ref Matrix4x4 matrixMVP,
-            Vector3 offset, Vector3 scale)
+        private void ProjectCage(Object3D object3d, ref Matrix4x4 viewMatrix,
+            ref Matrix4x4 projectionMatrix, Vector3 offset, Vector3 scale)
         {
-            var row1 = GetRow(matrixMVP, 1);
-            var row2 = GetRow(matrixMVP, 2);
-            var row3 = GetRow(matrixMVP, 3);
-            var row4 = GetRow(matrixMVP, 4);
-            var origin = row4; origin /= origin.W;
-            var axisXP = row4 + row1; axisXP /= axisXP.W;
-            var axisYP = row4 + row2; axisYP /= axisYP.W;
-            var axisZP = row4 + row3; axisZP /= axisZP.W;
-            var axisXN = row4 - row1; axisXN /= axisXN.W;
-            var axisYN = row4 - row2; axisYN /= axisYN.W;
-            var axisZN = row4 - row3; axisZN /= axisZN.W;
-            origin.Z = -(matrixMV.M43);
-            axisXP.Z = -(matrixMV.M43 + matrixMV.M13);
-            axisYP.Z = -(matrixMV.M43 + matrixMV.M23);
-            axisZP.Z = -(matrixMV.M43 + matrixMV.M33);
-            axisXN.Z = -(matrixMV.M43 - matrixMV.M13);
-            axisYN.Z = -(matrixMV.M43 - matrixMV.M23);
-            axisZN.Z = -(matrixMV.M43 - matrixMV.M33);
+            var matrixMV = object3d.Matrix * viewMatrix;
             
-            var T = To3D(origin);
-            var X = -To3D(axisXP - axisXN) * 0.5f;
-            var Y = -To3D(axisYP - axisYN) * 0.5f;
-            var Z = -To3D(axisZP - axisZN) * 0.5f;
-            
-            T = (T + offset) * scale;
-            X *= scale;
-            Y *= scale;
-            Z *= scale;
-            
-            matrixMVP.M11 = X.X; matrixMVP.M12 = X.Y; matrixMVP.M13 = X.Z; matrixMVP.M14 = 0;
-            matrixMVP.M21 = Y.X; matrixMVP.M22 = Y.Y; matrixMVP.M23 = Y.Z; matrixMVP.M24 = 0;
-            matrixMVP.M31 = Z.X; matrixMVP.M32 = Z.Y; matrixMVP.M33 = Z.Z; matrixMVP.M34 = 0;
-            matrixMVP.M41 = T.X; matrixMVP.M42 = T.Y; matrixMVP.M43 = T.Z; matrixMVP.M44 = 1;
-        }
-        
-        private Vector4 GetRow(in Matrix4x4 matrix, int row) {
-            switch (row) {
-                case 1: return new Vector4(matrix.M11, matrix.M12, matrix.M13, matrix.M14);
-                case 2: return new Vector4(matrix.M21, matrix.M22, matrix.M23, matrix.M24);
-                case 3: return new Vector4(matrix.M31, matrix.M32, matrix.M33, matrix.M34);
-                case 4: return new Vector4(matrix.M41, matrix.M42, matrix.M43, matrix.M44);
+            // We expect that projection matrix projects (x,y) to (-1..1) normalized space.
+            // scale.X is half-width, scale.Y is half-height of the render target.
+            for (int i = 0; i < 8; i++) {
+                var position = Vector3.Transform(object3d.Cage[i], matrixMV);
+                var projection = Vector4.Transform(position, projectionMatrix);
+                var inverseW = 1f / projection.W;
+                
+                ref var vertex = ref object3d.ProjectedCage[i];
+                vertex.Position.X = (projection.X + offset.X) * scale.X;
+                vertex.Position.Y = (projection.Y + offset.Y) * scale.Y;
+                vertex.Position.Z = (-position.Z + offset.Z) * scale.Z;
+                vertex.Projection.X = vertex.Position.X * inverseW;
+                vertex.Projection.Y = vertex.Position.Y * inverseW;
+                
+                if (i == 0) {
+                    object3d.ProjectedMin.X = object3d.ProjectedMax.X = vertex.Projection.X;
+                    object3d.ProjectedMin.Y = object3d.ProjectedMax.Y = vertex.Projection.Y;
+                    object3d.ProjectedMin.Z = object3d.ProjectedMax.Z = vertex.Position.Z;
+                } else {
+                    if (object3d.ProjectedMin.X > vertex.Projection.X) object3d.ProjectedMin.X = vertex.Projection.X;
+                    if (object3d.ProjectedMin.Y > vertex.Projection.Y) object3d.ProjectedMin.Y = vertex.Projection.Y;
+                    if (object3d.ProjectedMin.Z > vertex.Position.Z) object3d.ProjectedMin.Z = vertex.Position.Z;
+                    if (object3d.ProjectedMax.X < vertex.Projection.X) object3d.ProjectedMax.X = vertex.Projection.X;
+                    if (object3d.ProjectedMax.Y < vertex.Projection.Y) object3d.ProjectedMax.Y = vertex.Projection.Y;
+                    if (object3d.ProjectedMax.Z < vertex.Position.Z) object3d.ProjectedMax.Z = vertex.Position.Z;
+                }
             }
-            return default;
-        }
-        
-        private Vector3 To3D(Vector4 vector) {
-            return new Vector3(vector.X, vector.Y, vector.Z);
-        }
-        
-        private void UpdateCameraAperture() {
-            var scale = ApertureSize / Math.Max(renderbuffer.SizeX, renderbuffer.SizeY);
-            cameraFrustum.Aperture = new Vector2(renderbuffer.SizeX * scale, renderbuffer.SizeY * scale);
         }
         
         private class RenderingJob {
@@ -313,11 +301,17 @@ namespace OctreeSplatting.Demo {
                 
                 Renderbuffer.GetSamplingOffset(out float sampleX, out float sampleY);
                 
+                var halfX = Renderbuffer.DataSizeX * 0.5f;
+                var halfY = Renderbuffer.DataSizeY * 0.5f;
+                
                 for (int objectID = 0; objectID < SortedModels.Count; objectID++) {
-                    var obj3D = SortedModels[objectID];
+                    var object3d = SortedModels[objectID];
                     
-                    Renderer.Octree = obj3D.Octree;
-                    Renderer.Matrix = obj3D.RenderingMatrix;
+                    CageToMatrix(object3d.ProjectedCage, ref Renderer.Matrix);
+                    Renderer.Matrix.M41 += halfX;
+                    Renderer.Matrix.M42 += halfY;
+                    
+                    Renderer.Octree = object3d.Octree;
                     Renderer.RootAddress = 0;
                     
                     if (Renderbuffer.UseTemporalUpscaling) {
@@ -330,6 +324,51 @@ namespace OctreeSplatting.Demo {
                     
                     Renderer.Render();
                 }
+            }
+            
+            private static void CageToMatrix(ProjectedVertex[] cage, ref Matrix4x4 matrix) {
+                var TMinX = cage[0].Projection.X;
+                var XMinX = cage[1].Projection.X - TMinX;
+                var YMinX = cage[2].Projection.X - TMinX;
+                var ZMinX = cage[4].Projection.X - TMinX;
+                var TMaxX = cage[7].Projection.X;
+                var XMaxX = cage[6].Projection.X - TMaxX;
+                var YMaxX = cage[5].Projection.X - TMaxX;
+                var ZMaxX = cage[3].Projection.X - TMaxX;
+                
+                var TMinY = cage[0].Projection.Y;
+                var XMinY = cage[1].Projection.Y - TMinY;
+                var YMinY = cage[2].Projection.Y - TMinY;
+                var ZMinY = cage[4].Projection.Y - TMinY;
+                var TMaxY = cage[7].Projection.Y;
+                var XMaxY = cage[6].Projection.Y - TMaxY;
+                var YMaxY = cage[5].Projection.Y - TMaxY;
+                var ZMaxY = cage[3].Projection.Y - TMaxY;
+                
+                var TMinZ = cage[0].Position.Z;
+                var XMinZ = cage[1].Position.Z - TMinZ;
+                var YMinZ = cage[2].Position.Z - TMinZ;
+                var ZMinZ = cage[4].Position.Z - TMinZ;
+                var TMaxZ = cage[7].Position.Z;
+                var XMaxZ = cage[6].Position.Z - TMaxZ;
+                var YMaxZ = cage[5].Position.Z - TMaxZ;
+                var ZMaxZ = cage[3].Position.Z - TMaxZ;
+                
+                matrix.M11 = (XMaxX - XMinX) * 0.5f;
+                matrix.M12 = (XMaxY - XMinY) * 0.5f;
+                matrix.M13 = (XMaxZ - XMinZ) * 0.5f;
+                
+                matrix.M21 = (YMaxX - YMinX) * 0.5f;
+                matrix.M22 = (YMaxY - YMinY) * 0.5f;
+                matrix.M23 = (YMaxZ - YMinZ) * 0.5f;
+                
+                matrix.M31 = (ZMaxX - ZMinX) * 0.5f;
+                matrix.M32 = (ZMaxY - ZMinY) * 0.5f;
+                matrix.M33 = (ZMaxZ - ZMinZ) * 0.5f;
+                
+                matrix.M41 = (TMinX + TMaxX) * 0.5f;
+                matrix.M42 = (TMinY + TMaxY) * 0.5f;
+                matrix.M43 = (TMinZ + TMaxZ) * 0.5f;
             }
         }
     }

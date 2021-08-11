@@ -6,8 +6,10 @@ using System.Numerics;
 namespace OctreeSplatting.Demo {
     public class Object3D {
         public OctreeNode[] Octree;
-        public Vector3[] Cage;
-        public Matrix4x4 RenderingMatrix;
+        public readonly Vector3[] Cage;
+        
+        public readonly ProjectedVertex[] ProjectedCage;
+        public Vector3 ProjectedMin, ProjectedMax;
         
         private Vector3 position = Vector3.Zero;
         private Quaternion rotation = Quaternion.Identity;
@@ -60,18 +62,14 @@ namespace OctreeSplatting.Demo {
             }
         }
         
-        public Object3D(OctreeNode[] octree = null, Vector3[] cage = null) {
+        public Object3D(OctreeNode[] octree = null) {
             Octree = octree;
-            Cage = cage;
-            
-            if (Cage == null) ResetCage();
+            Cage = new Vector3[8];
+            ProjectedCage = new ProjectedVertex[8];
+            ResetCage();
         }
         
         public void ResetCage() {
-            if ((Cage == null) || (Cage.Length < 8)) {
-                Cage = new Vector3[8];
-            }
-            
             Cage[0] = new Vector3(-1, -1, -1);
             Cage[1] = new Vector3(+1, -1, -1);
             Cage[2] = new Vector3(-1, +1, -1);
