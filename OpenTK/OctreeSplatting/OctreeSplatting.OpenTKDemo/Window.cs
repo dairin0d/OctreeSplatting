@@ -100,7 +100,8 @@ namespace OctreeSplatting.OpenTKDemo {
             quad.Use();
             quad.Draw();
 
-            Title = $"{initialTitle}: {demoController.TimeInfo}; {demoController.ViewInfo}";
+            //Title = $"{initialTitle}: {demoController.TimeInfo}; {demoController.ViewInfo}";
+            Title = $"{initialTitle}: {demoController.TimeInfo}";
 
             SwapBuffers();
         }
@@ -148,6 +149,12 @@ namespace OctreeSplatting.OpenTKDemo {
                 IntKeyDown(keyboard, Keys.R) - IntKeyDown(keyboard, Keys.F),
                 IntKeyDown(keyboard, Keys.W) - IntKeyDown(keyboard, Keys.S)
             );
+
+            if (keyboard.IsKeyDown(Keys.LeftControl)) {
+                movement *= 10f;
+            } else if (keyboard.IsKeyDown(Keys.LeftShift)) {
+                movement *= 0.05f;
+            }
 
             const float cameraSpeed = 1.5f;
             movement *= cameraSpeed * (float)e.Time;

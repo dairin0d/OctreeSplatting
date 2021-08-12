@@ -112,12 +112,6 @@ namespace OctreeSplatting.UnityDemo {
             var mouseDelta = mousePosition - lastMousePosition;
             lastMousePosition = mousePosition;
             
-            var movement = new Vector3(
-                IntKeyDown(KeyCode.A) - IntKeyDown(KeyCode.D),
-                IntKeyDown(KeyCode.R) - IntKeyDown(KeyCode.F),
-                IntKeyDown(KeyCode.W) - IntKeyDown(KeyCode.S)
-            );
-            
             if (Input.GetKeyDown(KeyCode.F1)) {
                 demoController.Shape = SplatShape.Point;
             } else if (Input.GetKeyDown(KeyCode.F2)) {
@@ -141,6 +135,18 @@ namespace OctreeSplatting.UnityDemo {
             
             demoController.RelativeDilation += (IntKeyDown(KeyCode.Equals) - IntKeyDown(KeyCode.Minus)) / (float)(1 << 14);
             demoController.RelativeDilation = Mathf.Max(demoController.RelativeDilation, 0);
+            
+            var movement = new Vector3(
+                IntKeyDown(KeyCode.A) - IntKeyDown(KeyCode.D),
+                IntKeyDown(KeyCode.R) - IntKeyDown(KeyCode.F),
+                IntKeyDown(KeyCode.W) - IntKeyDown(KeyCode.S)
+            );
+            
+            if (Input.GetKey(KeyCode.LeftControl)) {
+                movement *= 10f;
+            } else if (Input.GetKey(KeyCode.LeftShift)) {
+                movement *= 0.05f;
+            }
             
             const float cameraSpeed = 1.5f;
             movement *= cameraSpeed * Time.deltaTime;
