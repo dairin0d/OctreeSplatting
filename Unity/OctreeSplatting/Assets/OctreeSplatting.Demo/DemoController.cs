@@ -101,7 +101,6 @@ namespace OctreeSplatting.Demo {
                     var object3d = new Object3D(octree);
                     object3d.Position = new Vector3(ix, 0, iz) * gridOffset;
                     object3d.Rotation = modelRotation;
-                    object3d.Scale = Vector3.One * 0.5f;
                     models.Add(object3d);
                 }
             }
@@ -354,17 +353,17 @@ namespace OctreeSplatting.Demo {
                 var YMaxZ = cage[5].Position.Z - TMaxZ;
                 var ZMaxZ = cage[3].Position.Z - TMaxZ;
                 
-                matrix.M11 = (XMaxX - XMinX) * 0.5f;
-                matrix.M12 = (XMaxY - XMinY) * 0.5f;
-                matrix.M13 = (XMaxZ - XMinZ) * 0.5f;
+                matrix.M11 = (XMaxX - XMinX) * 0.25f;
+                matrix.M12 = (XMaxY - XMinY) * 0.25f;
+                matrix.M13 = (XMaxZ - XMinZ) * 0.25f;
                 
-                matrix.M21 = (YMaxX - YMinX) * 0.5f;
-                matrix.M22 = (YMaxY - YMinY) * 0.5f;
-                matrix.M23 = (YMaxZ - YMinZ) * 0.5f;
+                matrix.M21 = (YMaxX - YMinX) * 0.25f;
+                matrix.M22 = (YMaxY - YMinY) * 0.25f;
+                matrix.M23 = (YMaxZ - YMinZ) * 0.25f;
                 
-                matrix.M31 = (ZMaxX - ZMinX) * 0.5f;
-                matrix.M32 = (ZMaxY - ZMinY) * 0.5f;
-                matrix.M33 = (ZMaxZ - ZMinZ) * 0.5f;
+                matrix.M31 = (ZMaxX - ZMinX) * 0.25f;
+                matrix.M32 = (ZMaxY - ZMinY) * 0.25f;
+                matrix.M33 = (ZMaxZ - ZMinZ) * 0.25f;
                 
                 matrix.M41 = (TMinX + TMaxX) * 0.5f;
                 matrix.M42 = (TMinY + TMaxY) * 0.5f;
