@@ -16,7 +16,7 @@ namespace OctreeSplatting.Demo {
         private float DistanceScale => (float)Math.Pow(2, distanceSteps * zoomFactor);
         
         private float zoomFactor = 0.125f;
-        private int distanceSteps = 56;
+        private int distanceSteps = 8;
         private int zoomSteps = -12;
         private float cameraPitch = -37;
         private float cameraYaw = -47;
@@ -207,7 +207,7 @@ namespace OctreeSplatting.Demo {
                 renderJob.AbsoluteDilation = AbsoluteDilation;
                 renderJob.RelativeDilation = RelativeDilation;
                 renderJob.Shape = Shape;
-                renderJob.MaxDistortion = MaxDistortion;
+                renderJob.MaxDistortion = MaxDistortion * (renderbuffer.UseTemporalUpscaling ? 0.5f : 1f);
                 
                 renderJob.ZIntercept = zIntercept;
                 renderJob.ZSlope = zSlope;
