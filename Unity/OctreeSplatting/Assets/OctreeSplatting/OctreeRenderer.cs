@@ -65,11 +65,11 @@ namespace OctreeSplatting {
         
         private int[] traceBuffer;
         
-        public unsafe bool Render() {
+        public unsafe int Render() {
             DrawnPixels = 0;
             
             int maxLevel = CalculateMaxLevel();
-            if (maxLevel < 0) return false;
+            if (maxLevel < 0) return -2;
             
             CalculateIntMatrix(maxLevel);
             
@@ -84,8 +84,8 @@ namespace OctreeSplatting {
             
             CalculateRootRect(dilation - SubpixelHalf);
             
-            if (rootInfo.Z < 0) return false;
-            if ((rootInfo.MaxX < rootInfo.MinX) | (rootInfo.MaxY < rootInfo.MinY)) return false;
+            if (rootInfo.Z < 0) return -1;
+            if ((rootInfo.MaxX < rootInfo.MinX) | (rootInfo.MaxY < rootInfo.MinY)) return 0;
             
             InitializeTraceBuffer();
             
@@ -146,7 +146,7 @@ namespace OctreeSplatting {
                 DrawnPixels = unsafeRenderer.Render();
             }
             
-            return true;
+            return 1;
         }
         
         private void InitializeTraceBuffer() {

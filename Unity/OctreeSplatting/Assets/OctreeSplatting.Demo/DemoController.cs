@@ -395,7 +395,7 @@ namespace OctreeSplatting.Demo {
                         renderer.Matrix.M41 += screenCenter.X;
                         renderer.Matrix.M42 += screenCenter.Y;
                         
-                        shouldSubdivide = (distortion > MaxDistortion) || !renderer.Render();
+                        shouldSubdivide = (distortion > MaxDistortion) || (renderer.Render() < 0);
                         shouldSubdivide &= (rootSizeMax > 1);
                     }
                     
@@ -471,7 +471,7 @@ namespace OctreeSplatting.Demo {
                 renderer.RootAddress = state.Data;
                 renderer.AbsoluteDilation = Math.Max(AbsoluteDilation, distortion * DistortionAbsoluteDilation);
                 renderer.RelativeDilation = Math.Max(RelativeDilation, distortion * DistortionRelativeDilation);
-                if (renderer.Render()) return 0;
+                if (renderer.Render() >= 0) return 0;
                 
                 // Still failed to render, despite our checks (they may lack precision).
                 // If node is larger than a pixel, continue subdividing.
