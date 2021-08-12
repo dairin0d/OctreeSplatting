@@ -327,6 +327,11 @@ namespace OctreeSplatting.Demo {
             
             public float MaxDistortion = 1;
             
+            // Relative 0.01 dilation seems to work
+            // better than absolute 0.5 dilation
+            // public float DistortionDilation = 0.5f;
+            public float DistortionDilation = 0.01f;
+            
             public void Render() {
                 renderer.Viewport = Viewport;
                 renderer.BufferShift = Renderbuffer.ShiftX;
@@ -443,6 +448,8 @@ namespace OctreeSplatting.Demo {
                 if (maxSize >= OctreeRenderer.MaxSizeInPixels) return subnodeMask;
                 
                 renderer.RootAddress = state.Data;
+                // renderer.AbsoluteDilation = Math.Max(AbsoluteDilation, distortion * DistortionDilation);
+                renderer.RelativeDilation = Math.Max(RelativeDilation, distortion * DistortionDilation);
                 if (renderer.Render()) return 0;
                 
                 // Still failed to render, despite our checks (they may lack precision).
