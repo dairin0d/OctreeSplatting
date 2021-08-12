@@ -261,7 +261,9 @@ namespace OctreeSplatting.Demo {
             // We expect that projection matrix projects (x,y) to (-1..1) normalized space.
             // scale.X is half-width, scale.Y is half-height of the render target.
             for (int i = 0; i < 8; i++) {
-                var position = Vector3.Transform(object3d.Cage[i], matrixMV);
+                // I'm not sure why the vertex position has to be
+                // negated here, but the results will be wrong without it
+                var position = Vector3.Transform(-object3d.Cage[i], matrixMV);
                 var projection = Vector4.Transform(position, projectionMatrix);
                 var inverseW = 1f / projection.W;
                 
@@ -353,17 +355,17 @@ namespace OctreeSplatting.Demo {
                 var YMaxZ = cage[5].Position.Z - TMaxZ;
                 var ZMaxZ = cage[3].Position.Z - TMaxZ;
                 
-                matrix.M11 = (XMaxX - XMinX) * 0.25f;
-                matrix.M12 = (XMaxY - XMinY) * 0.25f;
-                matrix.M13 = (XMaxZ - XMinZ) * 0.25f;
+                matrix.M11 = (XMinX - XMaxX) * 0.25f;
+                matrix.M12 = (XMinY - XMaxY) * 0.25f;
+                matrix.M13 = (XMinZ - XMaxZ) * 0.25f;
                 
-                matrix.M21 = (YMaxX - YMinX) * 0.25f;
-                matrix.M22 = (YMaxY - YMinY) * 0.25f;
-                matrix.M23 = (YMaxZ - YMinZ) * 0.25f;
+                matrix.M21 = (YMinX - YMaxX) * 0.25f;
+                matrix.M22 = (YMinY - YMaxY) * 0.25f;
+                matrix.M23 = (YMinZ - YMaxZ) * 0.25f;
                 
-                matrix.M31 = (ZMaxX - ZMinX) * 0.25f;
-                matrix.M32 = (ZMaxY - ZMinY) * 0.25f;
-                matrix.M33 = (ZMaxZ - ZMinZ) * 0.25f;
+                matrix.M31 = (ZMinX - ZMaxX) * 0.25f;
+                matrix.M32 = (ZMinY - ZMaxY) * 0.25f;
+                matrix.M33 = (ZMinZ - ZMaxZ) * 0.25f;
                 
                 matrix.M41 = (TMinX + TMaxX) * 0.5f;
                 matrix.M42 = (TMinY + TMaxY) * 0.5f;
