@@ -9,6 +9,7 @@ using System.Collections.Generic;
 namespace OctreeSplatting.Demo {
     public class DemoController {
         private Object3D player;
+        private Object3D playerModel;
         private Object3D playerCamera;
         private CameraFrustum cameraFrustum;
         
@@ -29,6 +30,8 @@ namespace OctreeSplatting.Demo {
         private List<Object3D> models = new List<Object3D>();
 
         private List<Object3D> sortedModels = new List<Object3D>();
+
+        private System.Diagnostics.Stopwatch timer = new System.Diagnostics.Stopwatch();
 
         private RenderingJob[] renderJobs;
         private Task[] renderTasks;
@@ -81,7 +84,9 @@ namespace OctreeSplatting.Demo {
             set => cameraYaw = value % 360f;
         }
 
-        public DemoController(OctreeNode[] octree) {
+        public DemoController(OctreeNode[] octree, OctreeNode[] playerOctree = null) {
+            timer.Start();
+            
             renderJobs = new RenderingJob[16];
             renderTasks = new Task[renderJobs.Length];
             for (int i = 0; i < renderJobs.Length; i++) {
@@ -95,8 +100,14 @@ namespace OctreeSplatting.Demo {
             playerCamera = new Object3D();
             cameraFrustum = new CameraFrustum();
             cameraFrustum.Perspective = 0;
-            cameraFrustum.Far = 10000;
-
+            cameraFrustum.Near = 0.001f;
+            cameraFrustum.Far = 1000;
+            
+            playerModel = new Object3D(playerOctree);
+            playerModel.Rotation = modelRotation;
+            playerModel.Scale = Vector3.One * 0.025f;
+            models.Add(playerModel);
+            
             for (int ix = -gridExtent; ix <= gridExtent; ix++) {
                 for (int iz = -gridExtent; iz <= gridExtent; iz++) {
                     var object3d = new Object3D(octree);
@@ -123,6 +134,9 @@ namespace OctreeSplatting.Demo {
                 var cameraForward = -playerCamera.AxisZ;
                 player.Rotation = Quaternion.CreateFromAxisAngle(Vector3.UnitY, (float)Math.Atan2(cameraForward.X, cameraForward.Z));
                 player.Position += player.AxisX * movement.X + player.AxisY * movement.Y + player.AxisZ * movement.Z;
+                
+                playerModel.Position = player.Position;
+                playerModel.Rotation = player.Rotation * modelRotation;
             }
         }
         
@@ -135,6 +149,14 @@ namespace OctreeSplatting.Demo {
             var cameraDistance = ApertureSize * DistanceScale;
             playerCamera.Position = player.Position - (cameraForward * cameraDistance);
             cameraFrustum.Focus = Vector3.UnitZ * cameraDistance;
+            
+            float time = timer.ElapsedMilliseconds / 1000f;
+            var deformRotation = Matrix4x4.CreateFromYawPitchRoll((float)Math.Sin(time*1.5f), 0, 0);
+            playerModel.ResetCage();
+            playerModel.Cage[2] = Vector3.Transform(playerModel.Cage[2], deformRotation);
+            playerModel.Cage[3] = Vector3.Transform(playerModel.Cage[3], deformRotation);
+            playerModel.Cage[6] = Vector3.Transform(playerModel.Cage[6], deformRotation);
+            playerModel.Cage[7] = Vector3.Transform(playerModel.Cage[7], deformRotation);
             
             stopwatch.Restart();
 
@@ -327,10 +349,9 @@ namespace OctreeSplatting.Demo {
             
             public float MaxDistortion = 1;
             
-            // Relative 0.01 dilation seems to work
-            // better than absolute 0.5 dilation
-            // public float DistortionDilation = 0.5f;
-            public float DistortionDilation = 0.01f;
+            public float DistortionAbsoluteDilation = 0.25f;
+            // public float DistortionRelativeDilation = 0.025f;
+            public float DistortionRelativeDilation = 0;
             
             public void Render() {
                 renderer.Viewport = Viewport;
@@ -448,8 +469,8 @@ namespace OctreeSplatting.Demo {
                 if (maxSize >= OctreeRenderer.MaxSizeInPixels) return subnodeMask;
                 
                 renderer.RootAddress = state.Data;
-                // renderer.AbsoluteDilation = Math.Max(AbsoluteDilation, distortion * DistortionDilation);
-                renderer.RelativeDilation = Math.Max(RelativeDilation, distortion * DistortionDilation);
+                renderer.AbsoluteDilation = Math.Max(AbsoluteDilation, distortion * DistortionAbsoluteDilation);
+                renderer.RelativeDilation = Math.Max(RelativeDilation, distortion * DistortionRelativeDilation);
                 if (renderer.Render()) return 0;
                 
                 // Still failed to render, despite our checks (they may lack precision).
