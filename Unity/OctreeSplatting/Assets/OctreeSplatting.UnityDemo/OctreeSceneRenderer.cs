@@ -88,7 +88,8 @@ namespace OctreeSplatting.UnityDemo {
             DrawBox(new Rect(0, 0, panelWidth, lineHeight*2));
             GUI.Label(new Rect(x, y, panelWidth, lineHeight), $"{camW}x{camH}: {demoController.TimeInfo}");
             y += lineHeight;
-            GUI.Label(new Rect(x, y, panelWidth, lineHeight), demoController.ViewInfo);
+            // GUI.Label(new Rect(x, y, panelWidth, lineHeight), demoController.ViewInfo);
+            GUI.Label(new Rect(x, y, panelWidth, lineHeight), $"P={demoController.Perspective}");
             y += lineHeight;
         }
         
@@ -157,7 +158,7 @@ namespace OctreeSplatting.UnityDemo {
             demoController.MoveCamera(movement.x, movement.y, movement.z);
             
             if (Input.GetKey(KeyCode.LeftAlt) | Input.GetKey(KeyCode.RightAlt)) {
-                demoController.Perspective = demoController.Perspective - mouseDelta.y * 0.01f;
+                demoController.Perspective = demoController.Perspective - mouseDelta.y * 0.001f;
             } else if (Input.GetMouseButton(1)) {
                 const float sensitivity = 0.2f;
                 demoController.CameraYaw -= mouseDelta.x * sensitivity;

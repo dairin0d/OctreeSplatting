@@ -101,7 +101,7 @@ namespace OctreeSplatting.OpenTKDemo {
             quad.Draw();
 
             //Title = $"{initialTitle}: {demoController.TimeInfo}; {demoController.ViewInfo}";
-            Title = $"{initialTitle}: {demoController.TimeInfo}";
+            Title = $"{initialTitle}: {demoController.TimeInfo}; P={demoController.Perspective}";
 
             SwapBuffers();
         }
@@ -168,7 +168,7 @@ namespace OctreeSplatting.OpenTKDemo {
             var delta = mouse.Delta;
 
             if (keyboard.IsKeyDown(Keys.LeftAlt) | keyboard.IsKeyDown(Keys.RightAlt)) {
-                demoController.Perspective = demoController.Perspective - delta.Y * 0.01f;
+                demoController.Perspective = demoController.Perspective - delta.Y * 0.001f;
             } else if (mouse.IsButtonDown(MouseButton.Right)) {
                 const float sensitivity = 0.2f;
                 demoController.CameraYaw -= delta.X * sensitivity;

@@ -17,7 +17,7 @@ namespace OctreeSplatting.Demo {
         private float DistanceScale => (float)Math.Pow(2, distanceSteps * zoomFactor);
         
         private float zoomFactor = 0.125f;
-        private int distanceSteps = 8;
+        private int distanceSteps = -8;
         private int zoomSteps = -12;
         private float cameraPitch = -37;
         private float cameraYaw = -47;
@@ -101,7 +101,7 @@ namespace OctreeSplatting.Demo {
             playerCamera = new Object3D();
             cameraFrustum = new CameraFrustum();
             cameraFrustum.Perspective = 0;
-            cameraFrustum.Near = 0.001f;
+            cameraFrustum.Near = 0.000001f;
             cameraFrustum.Far = 1000;
             
             playerModel = new Object3D(playerOctree);
@@ -372,7 +372,7 @@ namespace OctreeSplatting.Demo {
                     screenCenter.Y += sampleY;
                     renderer.MapThreshold = 1;
                 } else {
-                    renderer.MapThreshold = 2;
+                    renderer.MapThreshold = 3;
                 }
                 
                 for (int objectID = 0; objectID < SortedModels.Count; objectID++) {
