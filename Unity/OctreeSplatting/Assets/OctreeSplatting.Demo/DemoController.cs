@@ -349,7 +349,8 @@ namespace OctreeSplatting.Demo {
             
             public float MaxDistortion = 1;
             
-            public float DistortionAbsoluteDilation = 0.25f;
+            // public float DistortionAbsoluteDilation = 0.25f;
+            public float DistortionAbsoluteDilation = 0;
             // public float DistortionRelativeDilation = 0.025f;
             public float DistortionRelativeDilation = 0;
             
