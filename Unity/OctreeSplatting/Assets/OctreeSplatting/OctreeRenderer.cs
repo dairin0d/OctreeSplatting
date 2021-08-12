@@ -54,6 +54,9 @@ namespace OctreeSplatting {
         
         public int DrawnPixels;
         
+        public Color24 BoundsColor = new Color24 {R = 192, G = 0, B = 0};
+        public bool ShowBounds;
+        
         private StackItem rootInfo;
         
         private int extentX, extentY, extentZ;
@@ -64,6 +67,29 @@ namespace OctreeSplatting {
         private int TX, TY, TZ;
         
         private int[] traceBuffer;
+        
+        public bool IsOccluded(Range2D region, int z, out int lastY) {
+            if (region.MinX < Viewport.MinX) region.MinX = Viewport.MinX;
+            if (region.MinY < Viewport.MinY) region.MinY = Viewport.MinY;
+            if (region.MaxX > Viewport.MaxX) region.MaxX = Viewport.MaxX;
+            if (region.MaxY > Viewport.MaxY) region.MaxY = Viewport.MaxY;
+            
+            lastY = region.MinY;
+            
+            if (z < 0) return false;
+            
+            int j = region.MinX + (region.MinY << BufferShift);
+            int jEnd = region.MinX + (region.MaxY << BufferShift);
+            int iEnd = region.MaxX + (region.MinY << BufferShift);
+            int jStep = 1 << BufferShift;
+            for (; j <= jEnd; j += jStep, iEnd += jStep) {
+                for (int i = j; i <= iEnd; i++) {
+                    if (z < Pixels[i].Depth) return false;
+                }
+                lastY++;
+            }
+            return true;
+        }
         
         public unsafe int Render() {
             DrawnPixels = 0;
@@ -141,6 +167,9 @@ namespace OctreeSplatting {
                     Shape = Shape,
                     
                     CubeNodes = cubeNodesPtr,
+                    
+                    BoundsColor = BoundsColor,
+                    ShowBounds = ShowBounds,
                 };
                 
                 DrawnPixels = unsafeRenderer.Render();
@@ -335,12 +364,20 @@ namespace OctreeSplatting {
             
             public uint* CubeNodes;
             
+            public Color24 BoundsColor;
+            public bool ShowBounds;
+            
             public int Render() {
                 int mapHalf = (MapSize << MapShift) >> 1;
                 
                 var stackTop = NodeStack;
                 
                 int* traceFront = TraceBuffer;
+                
+                if (ShowBounds) {
+                    stackTop[1] = stackTop[0];
+                    RenderCube(stackTop + 1, ref traceFront, BoundsColor, CubeOctree.WireCube);
+                }
                 
                 while (stackTop >= NodeStack) {
                     // We need a copy anyway for subnode processing
@@ -544,12 +581,12 @@ namespace OctreeSplatting {
                 }
             }
             
-            private void RenderCube(StackItem* stackTop, ref int* traceFront, Color24 color) {
+            private void RenderCube(StackItem* stackTop, ref int* traceFront, Color24 color, int address = -1) {
                 int mapHalf = (MapSize << MapShift) >> 1;
                 
                 var stackBottom = stackTop;
                 
-                stackTop[0].Address = (ForwardQueues[255].Octants & 7) * CubeOctree.Step;
+                stackTop[0].Address = address >= 0 ? (uint)address : (ForwardQueues[255].Octants & 7) * CubeOctree.Step;
                 
                 while (stackTop >= stackBottom) {
                     // We need a copy anyway for subnode processing
@@ -661,8 +698,14 @@ namespace OctreeSplatting {
             private const int Y0 = 12*S, Y1 = 13*S, Y2 = 14*S, Y3 = 15*S;
             private const int Z0 = 16*S, Z1 = 17*S, Z2 = 18*S, Z3 = 19*S;
             private const int XN = 20*S, XP = 21*S, YN = 22*S, YP = 23*S, ZN = 24*S, ZP = 25*S;
+            private const int X4 = 26*S, X5 = 27*S, X6 = 28*S, X7 = 29*S;
+            private const int Y4 = 30*S, Y5 = 31*S, Y6 = 32*S, Y7 = 33*S;
+            private const int Z4 = 34*S, Z5 = 35*S, Z6 = 36*S, Z7 = 37*S;
+            private const int W0 = 38*S, W1 = 39*S, W2 = 40*S, W3 = 41*S, W4 = 42*S, W5 = 43*S, W6 = 44*S, W7 = 45*S;
+            private const int WC = 46*S;
             
             public const int Step = S;
+            public const int WireCube = WC;
             
             public static uint[] CubeNodes = new uint[] {
                 // corners
@@ -675,17 +718,17 @@ namespace OctreeSplatting {
                 0b11111101, XN, __, Z3, YP, Y1, ZP, C6, X2, // C6
                 0b11111110, __, XP, YP, Z2, ZP, Y2, X2, C7, // C7
                 
-                // X-edges
+                // X-angles
                 0b00111111, X0, X0, ZN, ZN, YN, YN, __, __, // X0
                 0b11001111, ZN, ZN, X1, X1, __, __, YP, YP, // X1
                 0b11111100, __, __, YP, YP, ZP, ZP, X2, X2, // X2
                 0b11110011, YN, YN, __, __, X3, X3, ZP, ZP, // X3
-                // Y-edges
+                // Y-angles
                 0b01011111, Y0, ZN, Y0, ZN, XN, __, XN, __, // Y0
                 0b11110101, XN, __, XN, __, Y1, ZP, Y1, ZP, // Y1
                 0b11111010, __, XP, __, XP, ZP, Y2, ZP, Y2, // Y2
                 0b10101111, ZN, Y3, ZN, Y3, __, XP, __, XP, // Y3
-                // Z-edges
+                // Z-angles
                 0b01110111, Z0, YN, XN, __, Z0, YN, XN, __, // Z0
                 0b10111011, YN, Z1, __, XP, YN, Z1, __, XP, // Z1
                 0b11101110, __, XP, YP, Z2, __, XP, YP, Z2, // Z2
@@ -698,6 +741,35 @@ namespace OctreeSplatting {
                 0b11001100, __, __, YP, YP, __, __, YP, YP, // YP
                 0b00001111, ZN, ZN, ZN, ZN, __, __, __, __, // ZN
                 0b11110000, __, __, __, __, ZP, ZP, ZP, ZP, // ZP
+                
+                // X-edges
+                0b00000011, X4, X4, __, __, __, __, __, __, // X4
+                0b00001100, __, __, X5, X5, __, __, __, __, // X5
+                0b11000000, __, __, __, __, __, __, X6, X6, // X6
+                0b00110000, __, __, __, __, X7, X7, __, __, // X7
+                // Y-edges
+                0b00000101, Y4, __, Y4, __, __, __, __, __, // Y4
+                0b01010000, __, __, __, __, Y5, __, Y5, __, // Y5
+                0b10100000, __, __, __, __, __, Y6, __, Y6, // Y6
+                0b00001010, __, Y7, __, Y7, __, __, __, __, // Y7
+                // Z-edges
+                0b00010001, Z4, __, __, __, Z4, __, __, __, // Z4
+                0b00100010, __, Z5, __, __, __, Z5, __, __, // Z5
+                0b10001000, __, __, __, Z6, __, __, __, Z6, // Z6
+                0b01000100, __, __, Z7, __, __, __, Z7, __, // Z7
+                
+                // wireframe corners
+                0b00010111, W0, X4, Y4, __, Z4, __, __, __, // W0
+                0b00101011, X4, W1, __, Y7, __, Z5, __, __, // W1
+                0b01001101, Y4, __, W2, X5, __, __, Z7, __, // W2
+                0b10001110, __, Y7, X5, W3, __, __, __, Z6, // W3
+                0b01110001, Z4, __, __, __, W4, X7, Y5, __, // W4
+                0b10110010, __, Z5, __, __, X7, W5, __, Y6, // W5
+                0b11010100, __, __, Z7, __, Y5, __, W6, X6, // W6
+                0b11101000, __, __, __, Z6, __, Y6, X6, W7, // W7
+                
+                // wireframe cube
+                0b11111111, W0, W1, W2, W3, W4, W5, W6, W7, // WC
             };
         }
     }

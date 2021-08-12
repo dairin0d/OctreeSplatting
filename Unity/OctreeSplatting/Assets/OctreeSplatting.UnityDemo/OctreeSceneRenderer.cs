@@ -124,6 +124,10 @@ namespace OctreeSplatting.UnityDemo {
                 demoController.Shape = SplatShape.Cube;
             }
             
+            if (Input.GetKeyDown(KeyCode.F12)) {
+                demoController.ShowBounds = !demoController.ShowBounds;
+            }
+            
             if (Input.GetKeyDown(KeyCode.Return)) {
                 demoController.UseUpscaling = !demoController.UseUpscaling;
             }

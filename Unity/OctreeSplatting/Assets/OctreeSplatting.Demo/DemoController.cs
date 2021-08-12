@@ -59,6 +59,7 @@ namespace OctreeSplatting.Demo {
         public float RelativeDilation = 0;
         public bool UseUpscaling = false;
         public SplatShape Shape = SplatShape.Rectangle;
+        public bool ShowBounds = false;
         public float MaxDistortion = 1;
 
         public int Zoom {
@@ -229,6 +230,7 @@ namespace OctreeSplatting.Demo {
                 renderJob.AbsoluteDilation = AbsoluteDilation;
                 renderJob.RelativeDilation = RelativeDilation;
                 renderJob.Shape = Shape;
+                renderJob.ShowBounds = ShowBounds;
                 renderJob.MaxDistortion = MaxDistortion * (renderbuffer.UseTemporalUpscaling ? 0.5f : 1f);
                 
                 renderJob.ZIntercept = zIntercept;
@@ -346,6 +348,7 @@ namespace OctreeSplatting.Demo {
             public float AbsoluteDilation = 0;
             public float RelativeDilation = 0;
             public SplatShape Shape = SplatShape.Rectangle;
+            public bool ShowBounds = false;
             
             public float MaxDistortion = 1;
             
@@ -382,6 +385,7 @@ namespace OctreeSplatting.Demo {
                     renderer.AbsoluteDilation = AbsoluteDilation;
                     renderer.RelativeDilation = RelativeDilation;
                     renderer.Shape = Shape;
+                    renderer.ShowBounds = ShowBounds;
                     
                     var rootSizeX = object3d.ProjectedMax.X - object3d.ProjectedMin.X;
                     var rootSizeY = object3d.ProjectedMax.Y - object3d.ProjectedMin.Y;

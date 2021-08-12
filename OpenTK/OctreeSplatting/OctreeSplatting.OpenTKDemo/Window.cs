@@ -132,6 +132,10 @@ namespace OctreeSplatting.OpenTKDemo {
                 demoController.Shape = SplatShape.Cube;
             }
 
+            if (keyboard.IsKeyPressed(Keys.F12)) {
+                demoController.ShowBounds = !demoController.ShowBounds;
+            }
+
             if (keyboard.IsKeyPressed(Keys.Enter)) {
                 demoController.UseUpscaling = !demoController.UseUpscaling;
             }
