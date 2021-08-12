@@ -56,6 +56,7 @@ namespace OctreeSplatting.Demo {
         public float RelativeDilation = 0;
         public bool UseUpscaling = false;
         public SplatShape Shape = SplatShape.Rectangle;
+        public float MaxDistortion = 1;
 
         public int Zoom {
             get => zoomSteps;
@@ -206,6 +207,7 @@ namespace OctreeSplatting.Demo {
                 renderJob.AbsoluteDilation = AbsoluteDilation;
                 renderJob.RelativeDilation = RelativeDilation;
                 renderJob.Shape = Shape;
+                renderJob.MaxDistortion = MaxDistortion;
                 
                 renderJob.ZIntercept = zIntercept;
                 renderJob.ZSlope = zSlope;
@@ -323,6 +325,8 @@ namespace OctreeSplatting.Demo {
             public float RelativeDilation = 0;
             public SplatShape Shape = SplatShape.Rectangle;
             
+            public float MaxDistortion = 1;
+            
             public void Render() {
                 renderer.Viewport = Viewport;
                 renderer.BufferShift = Renderbuffer.ShiftX;
@@ -361,11 +365,11 @@ namespace OctreeSplatting.Demo {
                     bool shouldSubdivide = sizeCondition | zCondition;
                     
                     if (!shouldSubdivide) {
-                        CageToMatrix(object3d.ProjectedCage, ref renderer.Matrix);
+                        float distortion = CageToMatrix(object3d.ProjectedCage, ref renderer.Matrix);
                         renderer.Matrix.M41 += screenCenter.X;
                         renderer.Matrix.M42 += screenCenter.Y;
                         
-                        shouldSubdivide = !renderer.Render();
+                        shouldSubdivide = (distortion > MaxDistortion) || !renderer.Render();
                         shouldSubdivide &= (rootSizeMax > 1);
                     }
                     
@@ -377,22 +381,40 @@ namespace OctreeSplatting.Demo {
             }
             
             private byte SubdivisionCallback(CageSubdivider<uint>.State state) {
+                Vector3 min = default, max = default;
+                
                 for (int i = 0; i < 8; i++) {
-                    subdivCage[i] = state.Grid[state.Indices[i]];
+                    var vertex = state.Grid[state.Indices[i]];
+                    subdivCage[i] = vertex;
+                    
+                    // We *have* to calculate bounds from the
+                    // actual corners, instead of the matrix
+                    if (i == 0) {
+                        min.X = max.X = vertex.Projection.X;
+                        min.Y = max.Y = vertex.Projection.Y;
+                        min.Z = max.Z = vertex.Position.Z;
+                    } else {
+                        if (min.X > vertex.Projection.X) min.X = vertex.Projection.X;
+                        if (min.Y > vertex.Projection.Y) min.Y = vertex.Projection.Y;
+                        if (min.Z > vertex.Position.Z) min.Z = vertex.Position.Z;
+                        if (max.X < vertex.Projection.X) max.X = vertex.Projection.X;
+                        if (max.Y < vertex.Projection.Y) max.Y = vertex.Projection.Y;
+                        if (max.Z < vertex.Position.Z) max.Z = vertex.Position.Z;
+                    }
                 }
                 
-                CageToMatrix(subdivCage, ref renderer.Matrix);
-                renderer.Matrix.M41 += screenCenter.X;
-                renderer.Matrix.M42 += screenCenter.Y;
-                
-                var center = renderer.Matrix.Translation;
-                var extents = GetMatrixExtents(in renderer.Matrix);
-                var min = center - extents;
-                var max = center + extents;
+                min.X += screenCenter.X;
+                min.Y += screenCenter.Y;
+                max.X += screenCenter.X;
+                max.Y += screenCenter.Y;
                 
                 if ((max.X <= 0) | (min.X >= screenSize.X)) return 0;
                 if ((max.Y <= 0) | (min.Y >= screenSize.Y)) return 0;
                 if ((max.Z <= 0) | (min.Z >= screenSize.Z)) return 0;
+                
+                float distortion = CageToMatrix(subdivCage, ref renderer.Matrix);
+                renderer.Matrix.M41 += screenCenter.X;
+                renderer.Matrix.M42 += screenCenter.Y;
                 
                 renderer.MaxLevel = (MaxLevel < 0) ? -1 : Math.Max(MaxLevel - state.Level, 0);
                 
@@ -413,7 +435,11 @@ namespace OctreeSplatting.Demo {
                 // subdivide it or cull (if it's a leaf node)
                 if (min.Z <= 0) return isLeaf ? (byte)0 : subnodeMask;
                 
-                var maxSize = Math.Max(extents.X, extents.Y) * 2;
+                if (distortion > MaxDistortion) {
+                    if (!isLeaf | (Shape == SplatShape.Cube)) return subnodeMask;
+                }
+                
+                var maxSize = Math.Max(max.X - min.X, max.Y - min.Y);
                 if (maxSize >= OctreeRenderer.MaxSizeInPixels) return subnodeMask;
                 
                 renderer.RootAddress = state.Data;
@@ -424,15 +450,7 @@ namespace OctreeSplatting.Demo {
                 return (maxSize > 1) ? subnodeMask : (byte)0;
             }
             
-            private static Vector3 GetMatrixExtents(in Matrix4x4 matrix) {
-                return new Vector3(
-                    Math.Abs(matrix.M11) + Math.Abs(matrix.M21) + Math.Abs(matrix.M31),
-                    Math.Abs(matrix.M12) + Math.Abs(matrix.M22) + Math.Abs(matrix.M32),
-                    Math.Abs(matrix.M13) + Math.Abs(matrix.M23) + Math.Abs(matrix.M33)
-                );
-            }
-            
-            private static void CageToMatrix(ProjectedVertex[] cage, ref Matrix4x4 matrix) {
+            private static float CageToMatrix(ProjectedVertex[] cage, ref Matrix4x4 matrix) {
                 var TMinX = cage[0].Projection.X;
                 var XMinX = cage[1].Projection.X - TMinX;
                 var YMinX = cage[2].Projection.X - TMinX;
@@ -475,6 +493,23 @@ namespace OctreeSplatting.Demo {
                 matrix.M41 = (TMinX + TMaxX) * 0.5f;
                 matrix.M42 = (TMinY + TMaxY) * 0.5f;
                 matrix.M43 = (TMinZ + TMaxZ) * 0.5f;
+                
+                // Theoretically, checking the distortion of any 2 axes should be enough?
+                float distortion, maxDistortion = 0f;
+                distortion = XMinX + XMaxX; if (distortion < 0f) distortion = -distortion;
+                if (distortion > maxDistortion) maxDistortion = distortion;
+                distortion = XMinY + XMaxY; if (distortion < 0f) distortion = -distortion;
+                if (distortion > maxDistortion) maxDistortion = distortion;
+                distortion = YMinX + YMaxX; if (distortion < 0f) distortion = -distortion;
+                if (distortion > maxDistortion) maxDistortion = distortion;
+                distortion = YMinY + YMaxY; if (distortion < 0f) distortion = -distortion;
+                if (distortion > maxDistortion) maxDistortion = distortion;
+                distortion = ZMinX + ZMaxX; if (distortion < 0f) distortion = -distortion;
+                if (distortion > maxDistortion) maxDistortion = distortion;
+                distortion = ZMinY + ZMaxY; if (distortion < 0f) distortion = -distortion;
+                if (distortion > maxDistortion) maxDistortion = distortion;
+                
+                return maxDistortion;
             }
         }
     }
