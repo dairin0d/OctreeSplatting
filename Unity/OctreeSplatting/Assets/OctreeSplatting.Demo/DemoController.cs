@@ -181,6 +181,13 @@ namespace OctreeSplatting.Demo {
         private void DrawOctrees(Matrix4x4 viewMatrix, Matrix4x4 projectionMatrix) {
             GatherVisibleModels(viewMatrix, projectionMatrix);
             
+            var vNear = Vector4.Transform(new Vector3(0, 0, cameraFrustum.Near), projectionMatrix);
+            var vFar = Vector4.Transform(new Vector3(0, 0, cameraFrustum.Far), projectionMatrix);
+            vNear.Z = 0;
+            vFar.Z = renderbuffer.SizeZ;
+            var zSlope = Math.Abs(vFar.W - vNear.W) / (vFar.Z - vNear.Z);
+            var zIntercept = Math.Abs(vNear.W) - zSlope * vNear.Z;
+            
             ThreadCount = Math.Min(Math.Max(ThreadCount, 1), renderJobs.Length);
             
             int yStep = (renderbuffer.DataSizeY + ThreadCount - 1) / ThreadCount;
@@ -195,10 +202,13 @@ namespace OctreeSplatting.Demo {
                 renderJob.Renderbuffer = renderbuffer;
                 renderJob.SortedModels = sortedModels;
                 
-                renderJob.Renderer.MaxLevel = MaxLevel;
-                renderJob.Renderer.AbsoluteDilation = AbsoluteDilation;
-                renderJob.Renderer.RelativeDilation = RelativeDilation;
-                renderJob.Renderer.Shape = Shape;
+                renderJob.MaxLevel = MaxLevel;
+                renderJob.AbsoluteDilation = AbsoluteDilation;
+                renderJob.RelativeDilation = RelativeDilation;
+                renderJob.Shape = Shape;
+                
+                renderJob.ZIntercept = zIntercept;
+                renderJob.ZSlope = zSlope;
                 
                 if (ThreadCount > 1) {
                     renderTasks[jobIndex] = new Task(renderJob.Render);
@@ -236,14 +246,13 @@ namespace OctreeSplatting.Demo {
                 
                 ProjectCage(object3d, ref viewMatrix, ref projectionMatrix, offset, scale);
                 
-                if (object3d.ProjectedMin.Z >= zMax) continue;
-                if (object3d.ProjectedMax.Z <= 0) continue;
-                
-                if (object3d.ProjectedMin.X >= scale.X) continue;
-                if (object3d.ProjectedMax.X <= -scale.X) continue;
-                
-                if (object3d.ProjectedMin.Y >= scale.Y) continue;
-                if (object3d.ProjectedMax.Y <= -scale.Y) continue;
+                // I use !(...) here to guard against NaN values
+                if (!(object3d.ProjectedMin.Z < zMax)) continue;
+                if (!(object3d.ProjectedMax.Z > 0)) continue;
+                if (!(object3d.ProjectedMin.X < scale.X)) continue;
+                if (!(object3d.ProjectedMax.X > -scale.X)) continue;
+                if (!(object3d.ProjectedMin.Y < scale.Y)) continue;
+                if (!(object3d.ProjectedMax.Y > -scale.Y)) continue;
                 
                 sortedModels.Add(object3d);
             }
@@ -290,41 +299,137 @@ namespace OctreeSplatting.Demo {
         }
         
         private class RenderingJob {
-            public OctreeRenderer Renderer = new OctreeRenderer();
             public Renderbuffer Renderbuffer;
             public Range2D Viewport;
             public List<Object3D> SortedModels;
             
+            private OctreeRenderer renderer = new OctreeRenderer();
+            private CageSubdivider<uint> subdivider = new CageSubdivider<uint>();
+            
+            private ProjectedVertex[] subdivCage = new ProjectedVertex[8];
+            private Vector3 screenSize, screenCenter;
+            
+            public float ZIntercept {
+                get => subdivider.ZIntercept;
+                set => subdivider.ZIntercept = value;
+            }
+            public float ZSlope {
+                get => subdivider.ZSlope;
+                set => subdivider.ZSlope = value;
+            }
+            
+            public int MaxLevel = -1;
+            public float AbsoluteDilation = 0;
+            public float RelativeDilation = 0;
+            public SplatShape Shape = SplatShape.Rectangle;
+            
             public void Render() {
-                Renderer.Viewport = Viewport;
-                Renderer.BufferShift = Renderbuffer.ShiftX;
-                Renderer.Pixels = Renderbuffer.DataPixels;
+                renderer.Viewport = Viewport;
+                renderer.BufferShift = Renderbuffer.ShiftX;
+                renderer.Pixels = Renderbuffer.DataPixels;
                 
                 Renderbuffer.GetSamplingOffset(out float sampleX, out float sampleY);
                 
-                var halfX = Renderbuffer.DataSizeX * 0.5f;
-                var halfY = Renderbuffer.DataSizeY * 0.5f;
+                screenSize = new Vector3(Renderbuffer.DataSizeX, Renderbuffer.DataSizeY, Renderbuffer.SizeZ);
+                screenCenter = screenSize * 0.5f;
+                
+                if (Renderbuffer.UseTemporalUpscaling) {
+                    screenCenter.X += sampleX;
+                    screenCenter.Y += sampleY;
+                    renderer.MapThreshold = 1;
+                } else {
+                    renderer.MapThreshold = 2;
+                }
                 
                 for (int objectID = 0; objectID < SortedModels.Count; objectID++) {
                     var object3d = SortedModels[objectID];
                     
-                    CageToMatrix(object3d.ProjectedCage, ref Renderer.Matrix);
-                    Renderer.Matrix.M41 += halfX;
-                    Renderer.Matrix.M42 += halfY;
+                    renderer.Octree = object3d.Octree;
+                    renderer.RootAddress = 0;
                     
-                    Renderer.Octree = object3d.Octree;
-                    Renderer.RootAddress = 0;
+                    renderer.MaxLevel = MaxLevel;
+                    renderer.AbsoluteDilation = AbsoluteDilation;
+                    renderer.RelativeDilation = RelativeDilation;
+                    renderer.Shape = Shape;
                     
-                    if (Renderbuffer.UseTemporalUpscaling) {
-                        Renderer.Matrix.M41 += sampleX;
-                        Renderer.Matrix.M42 += sampleY;
-                        Renderer.MapThreshold = 1;
-                    } else {
-                        Renderer.MapThreshold = 2;
+                    var rootSizeX = object3d.ProjectedMax.X - object3d.ProjectedMin.X;
+                    var rootSizeY = object3d.ProjectedMax.Y - object3d.ProjectedMin.Y;
+                    var rootSizeMax = Math.Max(rootSizeX, rootSizeY);
+                    
+                    bool sizeCondition = (rootSizeMax >= OctreeRenderer.MaxSizeInPixels);
+                    bool zCondition = (object3d.ProjectedMin.Z <= 0);
+                    bool shouldSubdivide = sizeCondition | zCondition;
+                    
+                    if (!shouldSubdivide) {
+                        CageToMatrix(object3d.ProjectedCage, ref renderer.Matrix);
+                        renderer.Matrix.M41 += screenCenter.X;
+                        renderer.Matrix.M42 += screenCenter.Y;
+                        
+                        shouldSubdivide = !renderer.Render();
+                        shouldSubdivide &= (rootSizeMax > 1);
                     }
                     
-                    Renderer.Render();
+                    if (shouldSubdivide) {
+                        subdivider.Subdivide(object3d.ProjectedCage, renderer.RootAddress,
+                            renderer.Octree[renderer.RootAddress].Mask, SubdivisionCallback);
+                    }
                 }
+            }
+            
+            private byte SubdivisionCallback(CageSubdivider<uint>.State state) {
+                for (int i = 0; i < 8; i++) {
+                    subdivCage[i] = state.Grid[state.Indices[i]];
+                }
+                
+                CageToMatrix(subdivCage, ref renderer.Matrix);
+                renderer.Matrix.M41 += screenCenter.X;
+                renderer.Matrix.M42 += screenCenter.Y;
+                
+                var center = renderer.Matrix.Translation;
+                var extents = GetMatrixExtents(in renderer.Matrix);
+                var min = center - extents;
+                var max = center + extents;
+                
+                if ((max.X <= 0) | (min.X >= screenSize.X)) return 0;
+                if ((max.Y <= 0) | (min.Y >= screenSize.Y)) return 0;
+                if ((max.Z <= 0) | (min.Z >= screenSize.Z)) return 0;
+                
+                renderer.MaxLevel = (MaxLevel < 0) ? -1 : Math.Max(MaxLevel - state.Level, 0);
+                
+                ref var node = ref renderer.Octree[state.ParentData];
+                bool isLeaf = (node.Mask == 0) | (renderer.MaxLevel == 0);
+                
+                // Don't use isLeaf for this check
+                byte subnodeMask;
+                if (node.Mask != 0) {
+                    state.Data = node.Address + state.Octant;
+                    subnodeMask = renderer.Octree[state.Data].Mask;
+                } else {
+                    state.Data = state.ParentData;
+                    subnodeMask = 255;
+                }
+                
+                // If a node intersects the near plane, either
+                // subdivide it or cull (if it's a leaf node)
+                if (min.Z <= 0) return isLeaf ? (byte)0 : subnodeMask;
+                
+                var maxSize = Math.Max(extents.X, extents.Y) * 2;
+                if (maxSize >= OctreeRenderer.MaxSizeInPixels) return subnodeMask;
+                
+                renderer.RootAddress = state.Data;
+                if (renderer.Render()) return 0;
+                
+                // Still failed to render, despite our checks (they may lack precision).
+                // If node is larger than a pixel, continue subdividing.
+                return (maxSize > 1) ? subnodeMask : (byte)0;
+            }
+            
+            private static Vector3 GetMatrixExtents(in Matrix4x4 matrix) {
+                return new Vector3(
+                    Math.Abs(matrix.M11) + Math.Abs(matrix.M21) + Math.Abs(matrix.M31),
+                    Math.Abs(matrix.M12) + Math.Abs(matrix.M22) + Math.Abs(matrix.M32),
+                    Math.Abs(matrix.M13) + Math.Abs(matrix.M23) + Math.Abs(matrix.M33)
+                );
             }
             
             private static void CageToMatrix(ProjectedVertex[] cage, ref Matrix4x4 matrix) {

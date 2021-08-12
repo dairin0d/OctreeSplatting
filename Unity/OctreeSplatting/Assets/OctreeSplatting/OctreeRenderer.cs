@@ -27,6 +27,12 @@ namespace OctreeSplatting {
         private const int MapBits = 5;
         private const int MapSize = 1 << MapBits;
         
+        // If the projected octree size is above this limit,
+        // there will be index-out-of-bounds errors
+        private const int LevelLimit = 28 - SubpixelBits;
+        
+        public const int MaxSizeInPixels = 1 << LevelLimit;
+        
         // Viewport & renderbuffer info
         public Range2D Viewport;
         public int BufferShift;
@@ -59,11 +65,11 @@ namespace OctreeSplatting {
         
         private int[] traceBuffer;
         
-        public unsafe void Render() {
+        public unsafe bool Render() {
             DrawnPixels = 0;
             
             int maxLevel = CalculateMaxLevel();
-            if (maxLevel < 0) return;
+            if (maxLevel < 0) return false;
             
             CalculateIntMatrix(maxLevel);
             
@@ -78,8 +84,8 @@ namespace OctreeSplatting {
             
             CalculateRootRect(dilation - SubpixelHalf);
             
-            if (rootInfo.Z < 0) return;
-            if ((rootInfo.MaxX < rootInfo.MinX) | (rootInfo.MaxY < rootInfo.MinY)) return;
+            if (rootInfo.Z < 0) return false;
+            if ((rootInfo.MaxX < rootInfo.MinX) | (rootInfo.MaxY < rootInfo.MinY)) return false;
             
             InitializeTraceBuffer();
             
@@ -139,6 +145,8 @@ namespace OctreeSplatting {
                 
                 DrawnPixels = unsafeRenderer.Render();
             }
+            
+            return true;
         }
         
         private void InitializeTraceBuffer() {
@@ -166,11 +174,7 @@ namespace OctreeSplatting {
             maxGap = Math.Max(maxGap, absXX + absYX + absZX);
             maxGap = Math.Max(maxGap, absXY + absYY + absZY);
             
-            // If the projected octree size is above this limit,
-            // there will be index-out-of-bounds errors
-            int maxShift = 28 - SubpixelBits;
-            
-            for (int maxLevel = 0; maxLevel <= maxShift; maxLevel++) {
+            for (int maxLevel = 0; maxLevel <= LevelLimit; maxLevel++) {
                 if (maxGap < (1 << maxLevel)) return maxLevel;
             }
             
