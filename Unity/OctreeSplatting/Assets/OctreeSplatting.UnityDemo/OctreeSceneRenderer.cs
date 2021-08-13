@@ -20,15 +20,15 @@ namespace OctreeSplatting.UnityDemo {
         private void Start() {
             if (!Application.isEditor) Screen.SetResolution(640, 480, false);
             
-            var asset = Resources.Load<TextAsset>("DemoOctree");
+            var octree = LoadOctree("DemoOctree");
+            var characterOctree = LoadOctree("CharacterOctree");
             
-            if (!asset) {
+            if (octree == null) {
                 Debug.LogError(NoDatasetMessage);
                 return;
             }
             
-            var octree = FromBytes<OctreeSplatting.OctreeNode>(asset.bytes);
-            demoController = new OctreeSplatting.Demo.DemoController(octree);
+            demoController = new OctreeSplatting.Demo.DemoController(octree, characterOctree);
             
             cam = GetComponent<Camera>();
             
@@ -181,6 +181,11 @@ namespace OctreeSplatting.UnityDemo {
 
             texture = new Texture2D(w, h, TextureFormat.RGBA32, false);
             texture.filterMode = FilterMode.Point;
+        }
+        
+        private OctreeSplatting.OctreeNode[] LoadOctree(string path) {
+            var asset = Resources.Load<TextAsset>(path);
+            return asset ? FromBytes<OctreeSplatting.OctreeNode>(asset.bytes) : null;
         }
         
         private static T[] FromBytes<T>(byte[] bytes) where T : struct {

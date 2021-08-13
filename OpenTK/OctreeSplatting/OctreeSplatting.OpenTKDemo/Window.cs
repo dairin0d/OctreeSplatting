@@ -40,6 +40,7 @@ namespace OctreeSplatting.OpenTKDemo {
             initialTitle = Title;
 
             var octree = LoadOctree($"../../Unity/OctreeSplatting/Assets/Resources/DemoOctree.bytes");
+            var characterOctree = LoadOctree($"../../Unity/OctreeSplatting/Assets/Resources/CharacterOctree.bytes");
             
             if (octree == null) {
                 Title = NoDatasetMessage;
@@ -47,7 +48,7 @@ namespace OctreeSplatting.OpenTKDemo {
                 return;
             }
             
-            demoController = new OctreeSplatting.Demo.DemoController(octree);
+            demoController = new OctreeSplatting.Demo.DemoController(octree, characterOctree);
             
             colorbuffer = new Texture();
             colorbuffer.Use(TextureUnit.Texture0);
