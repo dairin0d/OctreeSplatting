@@ -147,6 +147,9 @@ namespace OctreeSplatting.OpenTKDemo {
 
             demoController.RelativeDilation += (IntKeyDown(keyboard, Keys.Equal) - IntKeyDown(keyboard, Keys.Minus)) / (float)(1 << 14);
             demoController.RelativeDilation = System.Math.Max(demoController.RelativeDilation, 0);
+            
+            demoController.EffectiveNear += (IntKeyDown(keyboard, Keys.Home) - IntKeyDown(keyboard, Keys.End)) * 0.00001f;
+            demoController.EffectiveNear = System.Math.Min(System.Math.Max(demoController.EffectiveNear, 0), 1);
 
             var movement = new Vector3(
                 IntKeyDown(keyboard, Keys.A) - IntKeyDown(keyboard, Keys.D),

@@ -61,6 +61,8 @@ namespace OctreeSplatting.Demo {
         public SplatShape Shape = SplatShape.Rectangle;
         public bool ShowBounds = false;
         public float MaxDistortion = 1;
+        
+        public float EffectiveNear = 0;
 
         public int Zoom {
             get => zoomSteps;
@@ -100,9 +102,9 @@ namespace OctreeSplatting.Demo {
             
             playerCamera = new Object3D();
             cameraFrustum = new CameraFrustum();
-            cameraFrustum.Perspective = 0;
-            cameraFrustum.Near = 0.000001f;
-            cameraFrustum.Far = 1000;
+            cameraFrustum.Perspective = 0.98f;
+            cameraFrustum.Near = 0.001f;
+            cameraFrustum.Far = 100;
             
             playerModel = new Object3D(playerOctree);
             playerModel.Rotation = modelRotation;
@@ -212,6 +214,11 @@ namespace OctreeSplatting.Demo {
             var zSlope = Math.Abs(vFar.W - vNear.W) / (vFar.Z - vNear.Z);
             var zIntercept = Math.Abs(vNear.W) - zSlope * vNear.Z;
             
+            float effectiveNear = zIntercept / zSlope;
+            float effectiveNearMax = renderbuffer.SizeZ * Math.Min(Math.Max(EffectiveNear, 0), 1);
+            if (!(effectiveNear < effectiveNearMax)) effectiveNear = effectiveNearMax;
+            effectiveNear = -effectiveNear;
+            
             ThreadCount = Math.Min(Math.Max(ThreadCount, 1), renderJobs.Length);
             
             int yStep = (renderbuffer.DataSizeY + ThreadCount - 1) / ThreadCount;
@@ -232,6 +239,7 @@ namespace OctreeSplatting.Demo {
                 renderJob.Shape = Shape;
                 renderJob.ShowBounds = ShowBounds;
                 renderJob.MaxDistortion = MaxDistortion * (renderbuffer.UseTemporalUpscaling ? 0.5f : 1f);
+                renderJob.EffectiveNear = effectiveNear;
                 
                 renderJob.ZIntercept = zIntercept;
                 renderJob.ZSlope = zSlope;
@@ -354,6 +362,8 @@ namespace OctreeSplatting.Demo {
             public SplatShape Shape = SplatShape.Rectangle;
             public bool ShowBounds = false;
             
+            public float EffectiveNear;
+            
             public float MaxDistortion = 1;
             
             // public float DistortionAbsoluteDilation = 0.25f;
@@ -465,11 +475,12 @@ namespace OctreeSplatting.Demo {
                 
                 if ((max.X <= 0) | (min.X >= screenSize.X)) return 0;
                 if ((max.Y <= 0) | (min.Y >= screenSize.Y)) return 0;
-                if ((max.Z <= 0) | (min.Z >= screenSize.Z)) return 0;
+                if ((max.Z <= EffectiveNear) | (min.Z >= screenSize.Z)) return 0;
                 
                 float distortion = CageToMatrix(subdivCage, ref renderer.Matrix);
                 renderer.Matrix.M41 += screenCenter.X;
                 renderer.Matrix.M42 += screenCenter.Y;
+                renderer.Matrix.M43 -= EffectiveNear;
                 
                 ref var node = ref renderer.Octree[state.ParentData];
                 
@@ -485,6 +496,10 @@ namespace OctreeSplatting.Demo {
                 if ((node.Mask != 0) & (state.Level <= maxLevel)) {
                     state.Data = node.Address + state.Octant;
                     subnodeMask = renderer.Octree[state.Data].Mask;
+                    
+                    subdivisionDecider.IsLeaf = IsLeaf(subnodeMask, state.Level);
+                    decision = subdivisionDecider.Evaluate();
+                    if (decision == SubdivisionDecision.Cull) return 0;
                 } else {
                     state.Data = state.ParentData;
                     subnodeMask = 255;
@@ -577,7 +592,7 @@ namespace OctreeSplatting.Demo {
                 return (mask == 0) | (level >= maxLevel);
             }
             private bool IsTooClose(float z) {
-                return (z <= 0);
+                return (z <= EffectiveNear);
             }
             private bool IsTooBig(float sizeX, float sizeY) {
                 return (sizeX >= OctreeRenderer.MaxSizeInPixels) || (sizeY >= OctreeRenderer.MaxSizeInPixels);

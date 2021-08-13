@@ -141,6 +141,9 @@ namespace OctreeSplatting.UnityDemo {
             demoController.RelativeDilation += (IntKeyDown(KeyCode.Equals) - IntKeyDown(KeyCode.Minus)) / (float)(1 << 14);
             demoController.RelativeDilation = Mathf.Max(demoController.RelativeDilation, 0);
             
+            demoController.EffectiveNear += (IntKeyDown(KeyCode.Home) - IntKeyDown(KeyCode.End)) * 0.00001f;
+            demoController.EffectiveNear = Mathf.Min(Mathf.Max(demoController.EffectiveNear, 0), 1);
+            
             var movement = new Vector3(
                 IntKeyDown(KeyCode.A) - IntKeyDown(KeyCode.D),
                 IntKeyDown(KeyCode.R) - IntKeyDown(KeyCode.F),
