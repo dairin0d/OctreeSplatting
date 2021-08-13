@@ -6,6 +6,10 @@ using System.Numerics;
 
 namespace OctreeSplatting {
     public class OctreeRenderer {
+        public enum Result {
+            TooBig, TooClose, Culled, Rendered
+        }
+        
         private struct Delta {
             public int X, Y, Z;
             private int pad0;
@@ -91,11 +95,11 @@ namespace OctreeSplatting {
             return true;
         }
         
-        public unsafe int Render() {
+        public unsafe Result Render() {
             DrawnPixels = 0;
             
             int maxLevel = CalculateMaxLevel();
-            if (maxLevel < 0) return -2;
+            if (maxLevel < 0) return Result.TooBig;
             
             CalculateIntMatrix(maxLevel);
             
@@ -110,8 +114,8 @@ namespace OctreeSplatting {
             
             CalculateRootRect(dilation - SubpixelHalf);
             
-            if (rootInfo.Z < 0) return -1;
-            if ((rootInfo.MaxX < rootInfo.MinX) | (rootInfo.MaxY < rootInfo.MinY)) return 0;
+            if (rootInfo.Z < 0) return Result.TooClose;
+            if ((rootInfo.MaxX < rootInfo.MinX) | (rootInfo.MaxY < rootInfo.MinY)) return Result.Culled;
             
             InitializeTraceBuffer();
             
@@ -175,7 +179,7 @@ namespace OctreeSplatting {
                 DrawnPixels = unsafeRenderer.Render();
             }
             
-            return 1;
+            return Result.Rendered;
         }
         
         private void InitializeTraceBuffer() {

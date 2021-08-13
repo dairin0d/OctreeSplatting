@@ -335,6 +335,10 @@ namespace OctreeSplatting.Demo {
             private ProjectedVertex[] subdivCage = new ProjectedVertex[8];
             private Vector3 screenSize, screenCenter;
             
+            private int maxLevel;
+            
+            private SubdivisionDecider subdivisionDecider;
+            
             public float ZIntercept {
                 get => subdivider.ZIntercept;
                 set => subdivider.ZIntercept = value;
@@ -375,38 +379,58 @@ namespace OctreeSplatting.Demo {
                     renderer.MapThreshold = 3;
                 }
                 
+                maxLevel = (MaxLevel < 0) ? int.MaxValue : MaxLevel;
+                
+                subdivisionDecider.IsCube = IsCube();
+                
                 for (int objectID = 0; objectID < SortedModels.Count; objectID++) {
                     var object3d = SortedModels[objectID];
                     
                     renderer.Octree = object3d.Octree;
                     renderer.RootAddress = 0;
                     
-                    renderer.MaxLevel = MaxLevel;
+                    ref var node = ref renderer.Octree[renderer.RootAddress];
+                    
+                    var rootSizeX = object3d.ProjectedMax.X - object3d.ProjectedMin.X;
+                    var rootSizeY = object3d.ProjectedMax.Y - object3d.ProjectedMin.Y;
+                    
+                    subdivisionDecider.IsLeaf = IsLeaf(node.Mask, 0);
+                    subdivisionDecider.IsTooClose = IsTooClose(object3d.ProjectedMin.Z);
+                    subdivisionDecider.IsTooBig = IsTooBig(rootSizeX, rootSizeY);
+                    subdivisionDecider.IsDistorted = false;
+                    
+                    var decision = subdivisionDecider.Evaluate();
+                    if (decision == SubdivisionDecision.Cull) continue;
+                    
+                    renderer.MaxLevel = maxLevel;
                     renderer.AbsoluteDilation = AbsoluteDilation;
                     renderer.RelativeDilation = RelativeDilation;
                     renderer.Shape = Shape;
                     renderer.ShowBounds = ShowBounds;
                     
-                    var rootSizeX = object3d.ProjectedMax.X - object3d.ProjectedMin.X;
-                    var rootSizeY = object3d.ProjectedMax.Y - object3d.ProjectedMin.Y;
-                    var rootSizeMax = Math.Max(rootSizeX, rootSizeY);
-                    
-                    bool sizeCondition = (rootSizeMax >= OctreeRenderer.MaxSizeInPixels);
-                    bool zCondition = (object3d.ProjectedMin.Z <= 0);
-                    bool shouldSubdivide = sizeCondition | zCondition;
-                    
-                    if (!shouldSubdivide) {
+                    if (decision == SubdivisionDecision.Render) {
                         float distortion = CageToMatrix(object3d.ProjectedCage, ref renderer.Matrix);
                         renderer.Matrix.M41 += screenCenter.X;
                         renderer.Matrix.M42 += screenCenter.Y;
                         
-                        shouldSubdivide = (distortion > MaxDistortion) || (renderer.Render() < 0);
-                        shouldSubdivide &= (rootSizeMax > 1);
+                        subdivisionDecider.IsDistorted = IsDistorted(distortion);
+                        decision = subdivisionDecider.Evaluate();
+                        
+                        if (decision == SubdivisionDecision.Render) {
+                            var result = renderer.Render();
+                            if (result >= OctreeRenderer.Result.Culled) continue;
+                            
+                            subdivisionDecider.IsTooBig = (result == OctreeRenderer.Result.TooBig);
+                            subdivisionDecider.IsTooClose = (result == OctreeRenderer.Result.TooClose);
+                            decision = subdivisionDecider.Evaluate();
+                        }
                     }
                     
-                    if (shouldSubdivide) {
+                    if (decision == SubdivisionDecision.Subdivide) {
+                        var mask = subdivisionDecider.IsLeaf ? (byte)255 : node.Mask;
+                        
                         subdivider.Subdivide(object3d.ProjectedCage, renderer.RootAddress,
-                            renderer.Octree[renderer.RootAddress].Mask, SubdivisionCallback);
+                            mask, SubdivisionCallback);
                     }
                 }
             }
@@ -447,14 +471,18 @@ namespace OctreeSplatting.Demo {
                 renderer.Matrix.M41 += screenCenter.X;
                 renderer.Matrix.M42 += screenCenter.Y;
                 
-                renderer.MaxLevel = (MaxLevel < 0) ? -1 : Math.Max(MaxLevel - state.Level, 0);
-                
                 ref var node = ref renderer.Octree[state.ParentData];
-                bool isLeaf = (node.Mask == 0) | (renderer.MaxLevel == 0);
                 
-                // Don't use isLeaf for this check
+                subdivisionDecider.IsLeaf = IsLeaf(node.Mask, state.Level);
+                subdivisionDecider.IsTooClose = IsTooClose(min.Z);
+                subdivisionDecider.IsTooBig = IsTooBig(max.X - min.X, max.Y - min.Y);
+                subdivisionDecider.IsDistorted = IsDistorted(distortion);
+                
+                var decision = subdivisionDecider.Evaluate();
+                if (decision == SubdivisionDecision.Cull) return 0;
+                
                 byte subnodeMask;
-                if (node.Mask != 0) {
+                if ((node.Mask != 0) & (state.Level <= maxLevel)) {
                     state.Data = node.Address + state.Octant;
                     subnodeMask = renderer.Octree[state.Data].Mask;
                 } else {
@@ -462,25 +490,22 @@ namespace OctreeSplatting.Demo {
                     subnodeMask = 255;
                 }
                 
-                // If a node intersects the near plane, either
-                // subdivide it or cull (if it's a leaf node)
-                if (min.Z <= 0) return isLeaf ? (byte)0 : subnodeMask;
-                
-                if (distortion > MaxDistortion) {
-                    if (!isLeaf | (Shape == SplatShape.Cube)) return subnodeMask;
+                if (decision == SubdivisionDecision.Render) {
+                    renderer.RootAddress = state.Data;
+                    renderer.MaxLevel = Math.Max(maxLevel - state.Level, 0);
+                    renderer.AbsoluteDilation = Math.Max(AbsoluteDilation, distortion * DistortionAbsoluteDilation);
+                    renderer.RelativeDilation = Math.Max(RelativeDilation, distortion * DistortionRelativeDilation);
+                    
+                    var result = renderer.Render();
+                    if (result >= OctreeRenderer.Result.Culled) return 0;
+                    
+                    subdivisionDecider.IsTooBig = (result == OctreeRenderer.Result.TooBig);
+                    subdivisionDecider.IsTooClose = (result == OctreeRenderer.Result.TooClose);
+                    decision = subdivisionDecider.Evaluate();
+                    if (decision == SubdivisionDecision.Cull) return 0;
                 }
                 
-                var maxSize = Math.Max(max.X - min.X, max.Y - min.Y);
-                if (maxSize >= OctreeRenderer.MaxSizeInPixels) return subnodeMask;
-                
-                renderer.RootAddress = state.Data;
-                renderer.AbsoluteDilation = Math.Max(AbsoluteDilation, distortion * DistortionAbsoluteDilation);
-                renderer.RelativeDilation = Math.Max(RelativeDilation, distortion * DistortionRelativeDilation);
-                if (renderer.Render() >= 0) return 0;
-                
-                // Still failed to render, despite our checks (they may lack precision).
-                // If node is larger than a pixel, continue subdividing.
-                return (maxSize > 1) ? subnodeMask : (byte)0;
+                return subdivisionDecider.IsLeaf ? (byte)255 : subnodeMask;
             }
             
             private static float CageToMatrix(ProjectedVertex[] cage, ref Matrix4x4 matrix) {
@@ -543,6 +568,42 @@ namespace OctreeSplatting.Demo {
                 if (distortion > maxDistortion) maxDistortion = distortion;
                 
                 return maxDistortion;
+            }
+            
+            private bool IsCube() {
+                return (Shape == SplatShape.Cube);
+            }
+            private bool IsLeaf(byte mask, int level) {
+                return (mask == 0) | (level >= maxLevel);
+            }
+            private bool IsTooClose(float z) {
+                return (z <= 0);
+            }
+            private bool IsTooBig(float sizeX, float sizeY) {
+                return (sizeX >= OctreeRenderer.MaxSizeInPixels) || (sizeY >= OctreeRenderer.MaxSizeInPixels);
+            }
+            private bool IsDistorted(float distortion) {
+                return (distortion > MaxDistortion);
+            }
+            
+            private enum SubdivisionDecision {
+                Cull, Subdivide, Render
+            }
+            
+            private struct SubdivisionDecider {
+                public bool IsCube;
+                public bool IsLeaf;
+                public bool IsTooClose;
+                public bool IsTooBig;
+                public bool IsDistorted;
+                
+                // The "out of viewport" condition is handled elsewhere
+                public SubdivisionDecision Evaluate() {
+                    if (IsTooClose) return IsLeaf ? SubdivisionDecision.Cull : SubdivisionDecision.Subdivide;
+                    if (IsTooBig) return SubdivisionDecision.Subdivide;
+                    if (IsDistorted & (IsCube | !IsLeaf)) return SubdivisionDecision.Subdivide;
+                    return SubdivisionDecision.Render;
+                }
             }
         }
     }
