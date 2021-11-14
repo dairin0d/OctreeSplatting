@@ -17,10 +17,11 @@ namespace OctreeSplatting.Demo {
         private float DistanceScale => (float)Math.Pow(2, distanceSteps * zoomFactor);
         
         private float zoomFactor = 0.125f;
-        private int distanceSteps = -8;
+        private int distanceSteps = 56;
         private int zoomSteps = -12;
         private float cameraPitch = -37;
         private float cameraYaw = -47;
+        private bool usePerspective = false;
         
         private Quaternion modelRotation = Quaternion.CreateFromYawPitchRoll(0, (float)Math.PI, 0);
         
@@ -61,6 +62,7 @@ namespace OctreeSplatting.Demo {
         public SplatShape Shape = SplatShape.Rectangle;
         public bool ShowBounds = false;
         public float MaxDistortion = 1;
+        public bool UseMapAt3 = false;
         
         public float EffectiveNear = 0;
 
@@ -102,9 +104,11 @@ namespace OctreeSplatting.Demo {
             
             playerCamera = new Object3D();
             cameraFrustum = new CameraFrustum();
-            cameraFrustum.Perspective = 0.98f;
+            cameraFrustum.Perspective = 0;
             cameraFrustum.Near = 0.001f;
-            cameraFrustum.Far = 100;
+            cameraFrustum.Far = 1000;
+            
+            SwitchToOrthographic();
             
             playerModel = new Object3D(playerOctree);
             playerModel.Rotation = modelRotation;
@@ -143,6 +147,22 @@ namespace OctreeSplatting.Demo {
             }
         }
         
+        public void SwitchToPerspective() {
+            usePerspective = true;
+            distanceSteps = -8;
+            cameraFrustum.Perspective = 0.98f;
+            cameraFrustum.Near = 0.001f;
+            cameraFrustum.Far = 100;
+        }
+        
+        public void SwitchToOrthographic() {
+            usePerspective = false;
+            distanceSteps = 56;
+            cameraFrustum.Perspective = 0;
+            cameraFrustum.Near = 0.001f;
+            cameraFrustum.Far = 1000;
+        }
+        
         public void RenderFrame() {
             var degreesToRadians = (float)Math.PI / 180f;
             var pitchRotation = Quaternion.CreateFromAxisAngle(Vector3.UnitX, cameraPitch * degreesToRadians);
@@ -150,7 +170,11 @@ namespace OctreeSplatting.Demo {
             playerCamera.Rotation = yawRotation * pitchRotation;
             var cameraForward = -playerCamera.AxisZ;
             var cameraDistance = ApertureSize * DistanceScale;
-            playerCamera.Position = player.Position - (cameraForward * cameraDistance);
+            if (usePerspective) {
+                playerCamera.Position = player.Position - (cameraForward * cameraDistance);
+            } else {
+                playerCamera.Position = player.Position - (cameraForward * cameraFrustum.Far * 0.5f);
+            }
             cameraFrustum.Focus = Vector3.UnitZ * cameraDistance;
             
             float time = timer.ElapsedMilliseconds / 1000f;
@@ -239,6 +263,7 @@ namespace OctreeSplatting.Demo {
                 renderJob.Shape = Shape;
                 renderJob.ShowBounds = ShowBounds;
                 renderJob.MaxDistortion = MaxDistortion * (renderbuffer.UseTemporalUpscaling ? 0.5f : 1f);
+                renderJob.UseMapAt3 = UseMapAt3;
                 renderJob.EffectiveNear = effectiveNear;
                 
                 renderJob.ZIntercept = zIntercept;
@@ -366,6 +391,8 @@ namespace OctreeSplatting.Demo {
             
             public float MaxDistortion = 1;
             
+            public bool UseMapAt3 = false;
+            
             // public float DistortionAbsoluteDilation = 0.25f;
             public float DistortionAbsoluteDilation = 0;
             // public float DistortionRelativeDilation = 0.025f;
@@ -386,7 +413,7 @@ namespace OctreeSplatting.Demo {
                     screenCenter.Y += sampleY;
                     renderer.MapThreshold = 1;
                 } else {
-                    renderer.MapThreshold = 3;
+                    renderer.MapThreshold = UseMapAt3 ? 3 : 2;
                 }
                 
                 maxLevel = (MaxLevel < 0) ? int.MaxValue : MaxLevel;

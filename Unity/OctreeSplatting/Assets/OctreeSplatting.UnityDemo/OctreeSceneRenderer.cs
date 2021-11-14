@@ -125,6 +125,18 @@ namespace OctreeSplatting.UnityDemo {
                 demoController.Shape = SplatShape.Cube;
             }
             
+            if (Input.GetKeyDown(KeyCode.F9)) {
+                demoController.SwitchToOrthographic();
+            }
+            
+            if (Input.GetKeyDown(KeyCode.F10)) {
+                demoController.SwitchToPerspective();
+            }
+            
+            if (Input.GetKeyDown(KeyCode.F11)) {
+                demoController.UseMapAt3 = !demoController.UseMapAt3;
+            }
+            
             if (Input.GetKeyDown(KeyCode.F12)) {
                 demoController.ShowBounds = !demoController.ShowBounds;
             }

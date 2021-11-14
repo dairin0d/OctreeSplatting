@@ -133,6 +133,18 @@ namespace OctreeSplatting.OpenTKDemo {
                 demoController.Shape = SplatShape.Cube;
             }
 
+            if (keyboard.IsKeyPressed(Keys.F9)) {
+                demoController.SwitchToOrthographic();
+            }
+
+            if (keyboard.IsKeyPressed(Keys.F10)) {
+                demoController.SwitchToPerspective();
+            }
+
+            if (keyboard.IsKeyPressed(Keys.F11)) {
+                demoController.UseMapAt3 = !demoController.UseMapAt3;
+            }
+
             if (keyboard.IsKeyPressed(Keys.F12)) {
                 demoController.ShowBounds = !demoController.ShowBounds;
             }

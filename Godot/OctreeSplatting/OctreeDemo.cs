@@ -52,7 +52,6 @@ namespace OctreeSplatting.GodotDemo {
 		private void InitializeScene() {
 			var octree = LoadOctree($"../../Unity/OctreeSplatting/Assets/Resources/DemoOctree.bytes");
 			var characterOctree = LoadOctree($"../../Unity/OctreeSplatting/Assets/Resources/CharacterOctree.bytes");
-			characterOctree = null;
 
 			if (octree == null) {
 				GD.Print("ERROR: DemoOctree dataset not found!");
@@ -77,6 +76,11 @@ namespace OctreeSplatting.GodotDemo {
 		private void ProcessInput(float deltaTime) {
 			if (demoController == null) return;
 
+
+			if (Input.IsActionJustPressed("ui_cancel")) {
+				GetTree().Notification(MainLoop.NotificationWmQuitRequest);
+			}
+
 			if (Input.IsActionJustPressed("demo_shape_point")) {
 				demoController.Shape = SplatShape.Point;
 			} else if (Input.IsActionJustPressed("demo_shape_rect")) {
@@ -87,6 +91,18 @@ namespace OctreeSplatting.GodotDemo {
 				demoController.Shape = SplatShape.Circle;
 			} else if (Input.IsActionJustPressed("demo_shape_cube")) {
 				demoController.Shape = SplatShape.Cube;
+			}
+
+			if (Input.IsActionJustPressed("demo_switch_ortho")) {
+				demoController.SwitchToOrthographic();
+			}
+
+			if (Input.IsActionJustPressed("demo_switch_persp")) {
+				demoController.SwitchToPerspective();
+			}
+
+			if (Input.IsActionJustPressed("demo_use_map_at_3")) {
+				demoController.UseMapAt3 = !demoController.UseMapAt3;
 			}
 
 			if (Input.IsActionJustPressed("demo_show_bounds")) {
@@ -116,7 +132,7 @@ namespace OctreeSplatting.GodotDemo {
 
 			if (Input.IsActionPressed("demo_fast_speed")) {
 				movement *= 10f;
-			} else if (Input.IsActionJustPressed("demo_slow_speed")) {
+			} else if (Input.IsActionPressed("demo_slow_speed")) {
 				movement *= 0.05f;
 			}
 
