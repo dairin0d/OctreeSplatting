@@ -16,8 +16,7 @@ namespace OctreeSplatting.GodotDemo {
 		
 		private Vector2 mouseSpeed;
 		
-		public override void _Ready()
-		{
+		public override void _Ready() {
 			OS.SetWindowSize(new Vector2(width, height));
 			
 			colorbuffer = new byte[width*height*bytesPerPixel];
@@ -33,16 +32,13 @@ namespace OctreeSplatting.GodotDemo {
 			InitializeScene();
 		}
 
-		public override void _Input(InputEvent inputEvent)
-		{
-			if (inputEvent is InputEventMouseMotion mouseEvent)
-			{
+		public override void _Input(InputEvent inputEvent) {
+			if (inputEvent is InputEventMouseMotion mouseEvent) {
 				mouseSpeed = mouseEvent.Speed;
 			}
 		}
 
-		public override void _Process(float deltaTime)
-		{
+		public override void _Process(float deltaTime) {
 			ProcessInput(deltaTime);
 			
 			UpdateView();
