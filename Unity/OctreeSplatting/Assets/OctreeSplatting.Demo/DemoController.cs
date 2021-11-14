@@ -399,10 +399,16 @@ namespace OctreeSplatting.Demo {
             public float DistortionRelativeDilation = 0;
             
             public void Render() {
-                renderer.Viewport = Viewport;
-                renderer.BufferShift = Renderbuffer.ShiftX;
-                renderer.Pixels = Renderbuffer.DataPixels;
+                renderer.Begin(Renderbuffer.DataPixels, Renderbuffer.ShiftX, Viewport);
                 
+                try {
+                    RenderMain();
+                } finally {
+                    renderer.Finish();
+                }
+            }
+            
+            public void RenderMain() {
                 Renderbuffer.GetSamplingOffset(out float sampleX, out float sampleY);
                 
                 screenSize = new Vector3(Renderbuffer.DataSizeX, Renderbuffer.DataSizeY, Renderbuffer.SizeZ);

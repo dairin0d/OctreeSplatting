@@ -3,6 +3,7 @@
 
 using System;
 using System.Numerics;
+using System.Runtime.InteropServices;
 
 namespace OctreeSplatting {
     public class OctreeRenderer {
@@ -21,6 +22,35 @@ namespace OctreeSplatting {
             public int X, Y, Z;
             public uint Address;
             public int Level;
+        }
+        
+        private struct UnsafeRef {
+            public Object Source;
+            public GCHandle Handle;
+            public IntPtr Pointer;
+            
+            public static unsafe implicit operator void*(UnsafeRef r) => r.Pointer.ToPointer();
+            
+            public void Set(object source) {
+                if (Source == source) return;
+                Clear();
+                if (source == null) return;
+                Source = source;
+                Handle = GCHandle.Alloc(source, GCHandleType.Pinned);
+                Pointer = Handle.AddrOfPinnedObject();
+            }
+            
+            public void Set(IntPtr pointer) {
+                Clear();
+                Pointer = pointer;
+            }
+            
+            public void Clear() {
+                if (Handle.IsAllocated) Handle.Free();
+                Source = null;
+                Handle = default;
+                Pointer = default;
+            }
         }
         
         private const int SubpixelBits = 16;
@@ -72,7 +102,38 @@ namespace OctreeSplatting {
         
         private int[] traceBuffer;
         
-        public bool IsOccluded(Range2D region, int z, out int lastY) {
+        private UnsafeRef pixelsRef;
+        private UnsafeRef octreeRef;
+        private UnsafeRef queuesRef;
+        private UnsafeRef traceBufferRef;
+        private UnsafeRef cubeNodesRef;
+        
+        public void Begin(PixelData[] pixels, int bufferShift, Range2D viewport) {
+            Pixels = pixels;
+            BufferShift = bufferShift;
+            Viewport = viewport;
+            
+            Begin();
+        }
+        
+        public void Begin() {
+            InitializeTraceBuffer();
+            
+            pixelsRef.Set(Pixels);
+            queuesRef.Set(OctantOrder.SparseQueues);
+            traceBufferRef.Set(traceBuffer);
+            cubeNodesRef.Set(CubeOctree.CubeNodes);
+        }
+        
+        public void Finish() {
+            pixelsRef.Clear();
+            octreeRef.Clear();
+            queuesRef.Clear();
+            traceBufferRef.Clear();
+            cubeNodesRef.Clear();
+        }
+        
+        public unsafe bool IsOccluded(Range2D region, int z, out int lastY) {
             if (region.MinX < Viewport.MinX) region.MinX = Viewport.MinX;
             if (region.MinY < Viewport.MinY) region.MinY = Viewport.MinY;
             if (region.MaxX > Viewport.MaxX) region.MaxX = Viewport.MaxX;
@@ -82,13 +143,15 @@ namespace OctreeSplatting {
             
             if (z < 0) return false;
             
+            var pixelsPtr = (PixelData*)pixelsRef;
+            
             int j = region.MinX + (region.MinY << BufferShift);
             int jEnd = region.MinX + (region.MaxY << BufferShift);
             int iEnd = region.MaxX + (region.MinY << BufferShift);
             int jStep = 1 << BufferShift;
             for (; j <= jEnd; j += jStep, iEnd += jStep) {
                 for (int i = j; i <= iEnd; i++) {
-                    if (z < Pixels[i].Depth) return false;
+                    if (z < pixelsPtr[i].Depth) return false;
                 }
                 lastY++;
             }
@@ -117,8 +180,6 @@ namespace OctreeSplatting {
             if (rootInfo.Z < 0) return Result.TooClose;
             if ((rootInfo.MaxX < rootInfo.MinX) | (rootInfo.MaxY < rootInfo.MinY)) return Result.Culled;
             
-            InitializeTraceBuffer();
-            
             var queues = OctantOrder.SparseQueues;
             int forwardKey = OctantOrder.Key(in Matrix);
             int reverseKey = forwardKey ^ 0b11100000000;
@@ -134,11 +195,13 @@ namespace OctreeSplatting {
             byte* mapY = stackalloc byte[MapSize];
             int mapShift = CalculateMaps(deltasPtr, mapX, mapY);
             
-            fixed (PixelData* pixelsPtr = Pixels)
-            fixed (OctreeNode* octreePtr = Octree)
-            fixed (OctantOrder.Queue* queuesPtr = queues)
-            fixed (int* traceBufferPtr = traceBuffer)
-            fixed (uint* cubeNodesPtr = CubeOctree.CubeNodes)
+            octreeRef.Set(Octree);
+            
+            var pixelsPtr = (PixelData*)pixelsRef;
+            var octreePtr = (OctreeNode*)octreeRef;
+            var queuesPtr = (OctantOrder.Queue*)queuesRef;
+            var traceBufferPtr = (int*)traceBufferRef;
+            var cubeNodesPtr = (uint*)cubeNodesRef;
             {
                 var unsafeRenderer = new OctreeRendererUnsafe {
                     Viewport = Viewport,
