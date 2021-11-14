@@ -651,8 +651,8 @@ namespace OctreeSplatting {
                         var queue = ReverseQueues[nodeMask].Octants;
                         
                         int nextLevel = current.Level + 1;
-                        int nodeExtentX = (ExtentX >> nextLevel) + Dilation;
-                        int nodeExtentY = (ExtentY >> nextLevel) + Dilation;
+                        int nodeExtentX = (ExtentX >> nextLevel);
+                        int nodeExtentY = (ExtentY >> nextLevel);
                         
                         for (; queue != 0; queue >>= 4) {
                             uint octant = queue & 7;
