@@ -533,10 +533,11 @@ namespace OctreeSplatting.Demo {
                 }
                 
                 if (decision == SubdivisionDecision.Render) {
+                    float dilationUpscale = 1 << state.Level;
                     renderer.RootAddress = state.Data;
                     renderer.MaxLevel = Math.Max(maxLevel - state.Level, 0);
-                    renderer.AbsoluteDilation = Math.Max(AbsoluteDilation, distortion * DistortionAbsoluteDilation);
-                    renderer.RelativeDilation = Math.Max(RelativeDilation, distortion * DistortionRelativeDilation);
+                    renderer.AbsoluteDilation = Math.Max(AbsoluteDilation * dilationUpscale, distortion * DistortionAbsoluteDilation);
+                    renderer.RelativeDilation = Math.Max(RelativeDilation * dilationUpscale, distortion * DistortionRelativeDilation);
                     
                     var result = renderer.Render();
                     if (result >= OctreeRenderer.Result.Culled) return 0;
