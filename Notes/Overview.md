@@ -1026,6 +1026,12 @@ This is essentially the same as front-to-back octree splatting, only optimized f
 
 Of course, for more than one pixel this results in a lot of repeated work (not to mention a lot more cache misses), so this was about an order of magnitude slower than splatting. Potentially, some work could be shared via beam tracing... but occlusion-culled splatting is kind of like extreme version of beam tracing anyways, and, as you've seen above, I later used the map idea to speed up the splatting of 2x2 pixel nodes.
 
+#### **▸ Traverse-order caching**
+
+During my initial experiments, I didn't know about the breadth-first octree storage, so my renderer was quite slowed down by a large amount of cache misses. To try to mitigate that, back then I implemented a rather elaborate system that cached octree nodes in the order of their traversal, so on subsequent re-traversals the cache coherency was typically much better.
+
+However, while this solution improved the average performance in my test scenes, it was too impractical to be really useful: it required a lot of extra memory to store just one buffer with the traverse-order copies of nodes (and for each additional view / camera, the memory requirements would be correspondingly multiplied), and in the worst-case scenario (when no nodes from the previous frame can be reused) it would actually be slower than no caching at all. So when I switched to breadth-first storage, I was quite happy to sacrifice a bit of average-case performance for not having to deal with that memory-hungry maintenance nighmare :-)
+
 ---
 
 ## The end!
