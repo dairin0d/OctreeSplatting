@@ -1,0 +1,10 @@
+<Project Sdk="Godot.NET.Sdk/3.3.0">
+  <PropertyGroup>
+    <TargetFramework>net472</TargetFramework>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../Unity/OctreeSplatting/Assets/OctreeSplatting/**/*.cs" Link="%(RecursiveDir)%(Filename)%(Extension)"/>
+    <Compile Include="../../Unity/OctreeSplatting/Assets/OctreeSplatting.Demo/**/*.cs" Link="%(RecursiveDir)%(Filename)%(Extension)"/>
+  </ItemGroup>
+</Project>
