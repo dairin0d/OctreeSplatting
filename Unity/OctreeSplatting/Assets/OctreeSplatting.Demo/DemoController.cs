@@ -358,12 +358,17 @@ namespace OctreeSplatting.Demo {
         }
         
         private class RenderingJob {
+            private struct SubdivisionData {
+                public uint Address;
+                public int MinY;
+            }
+            
             public Renderbuffer Renderbuffer;
             public Range2D Viewport;
             public List<Object3D> SortedModels;
             
             private OctreeRenderer renderer = new OctreeRenderer();
-            private CageSubdivider<uint> subdivider = new CageSubdivider<uint>();
+            private CageSubdivider<SubdivisionData> subdivider = new CageSubdivider<SubdivisionData>();
             
             private ProjectedVertex[] subdivCage = new ProjectedVertex[8];
             private Vector3 screenSize, screenCenter;
@@ -472,13 +477,17 @@ namespace OctreeSplatting.Demo {
                     if (decision == SubdivisionDecision.Subdivide) {
                         var mask = subdivisionDecider.IsLeaf ? (byte)255 : node.Mask;
                         
-                        subdivider.Subdivide(object3d.ProjectedCage, renderer.RootAddress,
+                        var subdivisionData = new SubdivisionData {
+                            Address = renderer.RootAddress,
+                            MinY = Viewport.MinY,
+                        };
+                        subdivider.Subdivide(object3d.ProjectedCage, subdivisionData,
                             mask, SubdivisionCallback);
                     }
                 }
             }
             
-            private byte SubdivisionCallback(CageSubdivider<uint>.State state) {
+            private byte SubdivisionCallback(CageSubdivider<SubdivisionData>.State state) {
                 Vector3 min = default, max = default;
                 
                 for (int i = 0; i < 8; i++) {
@@ -510,12 +519,25 @@ namespace OctreeSplatting.Demo {
                 if ((max.Y <= 0) | (min.Y >= screenSize.Y)) return 0;
                 if ((max.Z <= EffectiveNear) | (min.Z >= screenSize.Z)) return 0;
                 
+                if (min.Z > EffectiveNear) {
+                    var region = new Range2D() {
+                        MinX = (int)(min.X + 0.5f),
+                        MinY = (int)(min.Y + 0.5f),
+                        MaxX = (int)(max.X - 0.5f),
+                        MaxY = (int)(max.Y - 0.5f),
+                    };
+                    if (region.MinY < state.ParentData.MinY) region.MinY = state.ParentData.MinY;
+                    if (renderer.IsOccluded(region, (int)min.Z, out state.Data.MinY)) return 0;
+                } else {
+                    state.Data.MinY = state.ParentData.MinY;
+                }
+                
                 float distortion = CageToMatrix(subdivCage, ref renderer.Matrix);
                 renderer.Matrix.M41 += screenCenter.X;
                 renderer.Matrix.M42 += screenCenter.Y;
                 renderer.Matrix.M43 -= EffectiveNear;
                 
-                ref var node = ref renderer.Octree[state.ParentData];
+                ref var node = ref renderer.Octree[state.ParentData.Address];
                 
                 subdivisionDecider.IsLeaf = IsLeaf(node.Mask, state.Level);
                 subdivisionDecider.IsTooClose = IsTooClose(min.Z);
@@ -527,20 +549,20 @@ namespace OctreeSplatting.Demo {
                 
                 byte subnodeMask;
                 if ((node.Mask != 0) & (state.Level <= maxLevel)) {
-                    state.Data = node.Address + state.Octant;
-                    subnodeMask = renderer.Octree[state.Data].Mask;
+                    state.Data.Address = node.Address + state.Octant;
+                    subnodeMask = renderer.Octree[state.Data.Address].Mask;
                     
                     subdivisionDecider.IsLeaf = IsLeaf(subnodeMask, state.Level);
                     decision = subdivisionDecider.Evaluate();
                     if (decision == SubdivisionDecision.Cull) return 0;
                 } else {
-                    state.Data = state.ParentData;
+                    state.Data.Address = state.ParentData.Address;
                     subnodeMask = 255;
                 }
                 
                 if (decision == SubdivisionDecision.Render) {
                     float dilationUpscale = 1 << state.Level;
-                    renderer.RootAddress = state.Data;
+                    renderer.RootAddress = state.Data.Address;
                     renderer.MaxLevel = Math.Max(maxLevel - state.Level, 0);
                     renderer.AbsoluteDilation = Math.Max(AbsoluteDilation * dilationUpscale, distortion * DistortionAbsoluteDilation);
                     renderer.RelativeDilation = Math.Max(RelativeDilation * dilationUpscale, distortion * DistortionRelativeDilation);
