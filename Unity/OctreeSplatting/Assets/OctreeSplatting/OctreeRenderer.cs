@@ -485,16 +485,20 @@ namespace OctreeSplatting {
                             }
                         }
                     } else if ((node.Mask == 0) | (current.Level >= MaxLevel)) {
-                        if (Shape == SplatShape.Cube) {
-                            RenderCube(stackTop + 1, ref traceFront, node.Data);
-                            continue;
-                        }
-                        
-                        current.Z += ExtentZ >> current.Level;
-                        
-                        if (Shape == SplatShape.Circle) {
-                            DrawCircle(ref current, ref traceFront, node.Data);
-                            continue;
+                        if (current.MaxSize > 1) {
+                            if (Shape == SplatShape.Cube) {
+                                RenderCube(stackTop + 1, ref traceFront, node.Data);
+                                continue;
+                            }
+                            
+                            current.Z += ExtentZ >> current.Level;
+                            
+                            if (Shape == SplatShape.Circle) {
+                                DrawCircle(ref current, ref traceFront, node.Data);
+                                continue;
+                            }
+                        } else {
+                            current.Z += ExtentZ >> current.Level;
                         }
                         
                         if (Shape == SplatShape.Point) {
@@ -656,6 +660,8 @@ namespace OctreeSplatting {
             private void RenderCube(StackItem* stackTop, ref int* traceFront, Color24 color, int address = -1) {
                 int mapHalf = (MapSize << MapShift) >> 1;
                 
+                int mapThreshold = (MapThreshold > 2 ? MapThreshold : 2);
+                
                 var stackBottom = stackTop;
                 
                 stackTop[0].Address = address >= 0 ? (uint)address : (ForwardQueues[255].Octants & 7) * CubeOctree.Step;
@@ -674,7 +680,7 @@ namespace OctreeSplatting {
                             Pixels[i].Color24 = color;
                             *(traceFront++) = i;
                         }
-                    } else if (current.MaxSize < MapThreshold) {
+                    } else if (current.MaxSize < mapThreshold) {
                         int mapStartX = ((current.MinX << SubpixelBits) + SubpixelHalf) - (current.X - (mapHalf >> current.Level));
                         int mapStartY = ((current.MinY << SubpixelBits) + SubpixelHalf) - (current.Y - (mapHalf >> current.Level));
                         int mapShift = MapShift - current.Level;
