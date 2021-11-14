@@ -940,7 +940,7 @@ pyramidal operators"
 [hole-filling-2]: https://www.researchgate.net/profile/Paul-Rosenthal/publication/231217483_Image-space_Point_Cloud_Rendering/links/0fcfd50660e9b1a5ef000000/Image-space-Point-Cloud-Rendering.pdf "Image-space Point Cloud Rendering"
 [hole-filling-3]: http://indigo.diginext.fr/EN/Documents/vast2011-pbr.pdf "Real-time Rendering of Massive Unstructured Raw Point Clouds using Screen-space Operators"
 
-If you decide to take a look at my code, keep in mind that handling subdivisions is pretty unpotimized there (e.g. one could move array pinning out of OctreeRenderer, add occlusion checks to the subdivision callback, etc.). But since I added support for deformations mostly for demonstration purposes, I didn't particularly bother at that point.
+If you decide to take a look at my code, keep in mind that handling subdivisions is not very optimized there. But since I added support for deformations mostly for demonstration purposes, I didn't particularly bother with that.
 
 ---
 
