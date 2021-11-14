@@ -119,7 +119,7 @@ This can have a significant effect on performance. Over the course of my experim
 
 All nodes are stored in a contiguous array, and each node is a struct consisting of:
 
-* Address - the index of this node's first clild (subnode) in the array
+* Address - the index of this node's first child (subnode) in the array
 * Mask - the bitmask of this node's non-empty octants (subnodes)
 * Data - the data associated with this node (for example, color)
 
@@ -821,7 +821,7 @@ However, we are still not quite done with our renderer, feature-wise. In the spi
 
 ### **Level cap**
 
-Artificially [limiting](https://github.com/dairin0d/OctreeSplatting/commit/e37ea6395340a8243d8ea9d9fa9e27289dc71295) the depth of octree traversal isn't partucularly useful (mostly for debugging), but it's very simple to implement. So, why not.
+Artificially [limiting](https://github.com/dairin0d/OctreeSplatting/commit/e37ea6395340a8243d8ea9d9fa9e27289dc71295) the depth of octree traversal isn't particularly useful (mostly for debugging), but it's very simple to implement. So, why not.
 
 <img src="images/shape_rectangle.png" alt="Octree rendered at a reduced LOD level" width="50%"/>
 
@@ -858,7 +858,7 @@ During my earlier experiments, I tinkered with interpolation of parent's and chi
 At this point, the renderer only writes color data to its render target. If we want to incorporate any sort of lighting, we also need to know the normals at each pixel. As I understand, there are mainly 3 ways to do that:
 
 1. Calculate normals from the depth buffer. This might look okay in some cases, but is prone to artifacts and will be useless for nodes larger than a pixel.
-2. Calculate normals during the octree splatting. This means an extra matrix multiplication for each written pixel, but requires access only to local data.
+2. Calculate normals during the octree splatting. This means an extra matrix multiplication for each written pixel, but requires access only to the local data.
 3. Calculate normals after the octree splatting. This avoids matrix multiplications for pixels that get overwritten, but requires storing object ID and the raw normal data (or, alternatively, the node address) in the renderbuffer.
 
 I don't currently have any octree datasets with normals, so I don't really know which of the last two options would be better.
@@ -885,8 +885,8 @@ Since we'll be dealing with explicit cube vertices now, first we need a way to c
 
 Onto the [subdivision itself](https://github.com/dairin0d/OctreeSplatting/commit/e503082a9582a74e8eeec147c5f3947e48c5b469): here we need a recursive traversal, so I made a helper class `CageSubdivider` with a stack of 3x3x3 grids / octant queues / some other data. After it is provided with 8 starting cube vertices and a callback (that tells whether to subdivide a given octant), it:
 
-1. Copies the cube vertices to the corners of a grid in stack;
-2. Sorts the octant order/queue by Z coordinate of the corresponding corners;
+1. Copies the cube vertices to the corners of a grid in the stack;
+2. Sorts the octant order/queue by the Z coordinate of the corresponding corners;
 3. Calculates (via averaging) the remaining grid vertices;
 4. Until the stack is exhausted:
     1. For each octant, passes the corresponding grid vertices to the callback;
@@ -904,7 +904,7 @@ But not just that. With slicing, we now have access to **deformations and perspe
 
 (The character model is a voxelized version of ["Samurai Mayumi" by SurplusBun](https://sketchfab.com/3d-models/samurai-mayumi-1ef5be384abc48f299f4e87d92af46b6). If you wish to test it yourself, the corresponding octree can be downloaded [here](https://github.com/dairin0d/OctreeSplatting/releases/download/data-character/Character-raw-octree.zip).)
 
-All that's needed is an [additional check](https://github.com/dairin0d/OctreeSplatting/compare/e503082a9582a74e8eeec147c5f3947e48c5b469..95ab1e083f58750b763d9d58d9be10da63d5707c) in the subdivision callback. The more you subdivide a deformed cube, the closer to a parallelepiped each sub-cube becomes -- so we just need to check whether the cube's edges are parallel enough. The amount of parallellism (or, alternatively, distortion) can be estimated, for example, from the difference between the cube's opposite edge vectors.
+All that's needed is an [additional check](https://github.com/dairin0d/OctreeSplatting/compare/e503082a9582a74e8eeec147c5f3947e48c5b469..95ab1e083f58750b763d9d58d9be10da63d5707c) in the subdivision callback. The more you subdivide a deformed cube, the closer to a parallelepiped each sub-cube becomes -- so we just need to check whether the cube's edges are parallel enough. The amount of parallelism (or, alternatively, distortion) can be estimated, for example, from the difference between the cube's opposite edge vectors.
 
 The final subdivision logic [ended up](https://github.com/dairin0d/OctreeSplatting/blob/b4355f9f5a93e9ecc9963096644c07f0abccb7ba/Unity/OctreeSplatting/Assets/OctreeSplatting.Demo/DemoController.cs#L573-L607) looking something like this:
 
@@ -950,11 +950,11 @@ So! Now that we know we can do deformations, let's talk a bit about animations ;
 
 Of course, rigid (non-deforming) and flip-book (each frame is a separate octree) animations are trivial for voxel models. But skeletal animation is trickier, as the usual approaches aren't directly applicable.
 
-Surprisingly, there doesn't seem to be that much material on the subject of combining skinning with octrees. The only notable exception is probably Dennis Bautembach's ["Animated Sparse Voxel Octrees"](http://masters.donntu.org/2012/fknt/radchenko/library/asvo.pdf), popularly explained in [this](https://www.youtube.com/playlist?list=PLfuJEfUHg4HGC-pS85iam40FmG9vyLYcR) short series of videos. His technique (implemented in [CUDA](https://en.wikipedia.org/wiki/CUDA)) essentially traverses the octree to a LOD level sufficient for display, and then transforms each voxel at that level as if it was a regular mesh vertex. Naturally, this can lead to holes between the transfromed voxels, which he counters by enlarging each voxel by some amount. Dennis also considers transforming the 8 corners of a voxel instead of just the center (in order to eliminate holes), but he notes that this is too computationally expensive. In the end, he concludes that this technique is mostly siutable for moderate deformations.
+Surprisingly, there doesn't seem to be that much material on the subject of combining skinning with octrees. The only notable exception is probably Dennis Bautembach's ["Animated Sparse Voxel Octrees"](http://masters.donntu.org/2012/fknt/radchenko/library/asvo.pdf), popularly explained in [this](https://www.youtube.com/playlist?list=PLfuJEfUHg4HGC-pS85iam40FmG9vyLYcR) short series of videos. His technique (implemented in [CUDA](https://en.wikipedia.org/wiki/CUDA)) essentially traverses the octree to a LOD level sufficient for display, and then transforms each voxel at that level as if it was a regular mesh vertex. Naturally, this can lead to holes between the transformed voxels, which he counters by enlarging each voxel by some amount. Dennis also considers transforming the 8 corners of a voxel instead of just the center (in order to eliminate holes), but he notes that this is too computationally expensive. In the end, he concludes that this technique is mostly suitable for moderate deformations.
 
 Obviously, we can't afford anything of this sort in our CPU renderer. However, there exists another (and pretty popular!) animation technique that's perfectly compatible with octrees: [*cage deformations!*](http://www.immagery.com/pdf/cage_based_def_methods.pdf) Or, at least, their linear variant.
 
-In essence, this is a direct extension of textured triangles / quads to 3D. Texture (2D array of pixels) becomes 3D array of voxels, and triangles / quads become tetrahedrons and cuboids, respectively. So if we split a high-detail model into a collection of connected cubical / tetrahedral volumes (which together form a cage) and assign bone weights to their vertices, the *cage itself* may be animated using any of the traditional techniques. As a result, we get a skeletally animaled voxel/point-cloud model (composed of many small octrees) at a much lower price :)
+In essence, this is a direct extension of textured triangles / quads to 3D. Texture (2D array of pixels) becomes 3D array of voxels, and triangles / quads become tetrahedrons and cuboids, respectively. So if we split a high-detail model into a collection of connected cubical / tetrahedral volumes (which together form a cage) and assign bone weights to their vertices, the *cage itself* may be animated using any of the traditional techniques. As a result, we get a skeletally animated voxel/point-cloud model (composed of many small octrees) at a much lower price :)
 
 Interestingly, back in 2019 Atomontage engine released a [teaser video](https://www.youtube.com/watch?v=TCCJ88OCQX4) with a (what I assume) skeletally animated voxel dragon swinging its head left and right. I have no idea what approach Atomontage uses there, but I wouldn't be surprised if it's something along the same lines.
 
