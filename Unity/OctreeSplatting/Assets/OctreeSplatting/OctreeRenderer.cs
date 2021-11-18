@@ -660,6 +660,9 @@ namespace OctreeSplatting {
             private void RenderCube(StackItem* stackTop, ref int* traceFront, Color24 color, int address = -1) {
                 int mapHalf = (MapSize << MapShift) >> 1;
                 
+                // In the temporal upsampling mode, cube mode can sometimes be
+                // noticeably slower than without upsampling. This is an attempt
+                // to mitigate that (at the cost of small visual artifacts).
                 int mapThreshold = (MapThreshold > 2 ? MapThreshold : 2);
                 
                 var stackBottom = stackTop;
