@@ -6,7 +6,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using UnityEngine;
 
-namespace SpanCasterDemo {
+namespace VoxelStackRenderingDemo {
     public struct IterRange {
         public int Start, Stop, Step;
         public IterRange(int start, int stop, int step) {
