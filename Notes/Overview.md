@@ -1028,7 +1028,7 @@ This was inspired by the ["Caviar" 3D model format](https://alphacentauri2.info/
 
 This is a [tried-and-true](https://github.com/s-macke/VoxelSpace) [method](https://web.archive.org/web/20050206144506/http://www.flipcode.com/articles/voxelland_part02.shtml), most notably used in some early [Novalogic games](https://en.wikipedia.org/wiki/Voxel_Space). Originally, it could only handle heightmaps, but was later [extended](http://www.advsys.net/ken/voxlap.htm) by Ken Silverman to render RLE-encoded [stacks of voxels](https://stackoverflow.com/questions/3794306/can-someone-describe-the-algorithm-used-by-ken-silvermans-voxlap-engine) at arbitrary orientations. There was also an isometric game [Hexplore](https://www.mobygames.com/game/windows/hexplore/screenshots) which, most likely, used a similar approach.
 
-I made an attempt to do something similar, but didn't go very far in that direction. Under certain limitations, this could be quite fast, but in general it just doesn't scale as well as tree-based methods.
+I made an attempt to do [something similar](https://github.com/dairin0d/OctreeSplatting/blob/77956f60650ae02d6d960a03967579470af0f47e/Unity/OctreeSplatting/Assets/VoxelStackRendering.Demo/VoxelStackRenderer.cs), but didn't go very far in that direction. Under certain limitations, this could be quite fast, but in general it just doesn't scale as well as tree-based methods.
 
 #### **▸ Splatting-like "raycasting"**
 
