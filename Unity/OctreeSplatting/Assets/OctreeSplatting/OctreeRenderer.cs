@@ -64,7 +64,7 @@ namespace OctreeSplatting {
         private const int SubpixelHalf = SubpixelSize >> 1;
         private const int MaxSubdivisions = 31 - SubpixelBits;
         
-        private const int MapBits = 5;
+        private const int MapBits = 6;
         private const int MapSize = 1 << MapBits;
         
         // If the projected octree size is above this limit,
