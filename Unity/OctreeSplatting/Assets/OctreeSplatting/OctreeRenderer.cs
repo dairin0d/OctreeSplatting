@@ -11,6 +11,12 @@ namespace OctreeSplatting {
             TooBig, TooClose, Culled, Rendered
         }
         
+        [StructLayout(LayoutKind.Explicit)]
+        private struct BoolByte {
+            [FieldOffset(0)] public bool BoolValue;
+            [FieldOffset(0)] public byte ByteValue;
+        }
+        
         private struct Delta {
             public int X, Y, Z;
             private int pad0;
@@ -191,9 +197,14 @@ namespace OctreeSplatting {
             Delta* deltasPtr = stackalloc Delta[8];
             CalculateDeltas(deltasPtr);
             
+            int mapThreshold8 = (MapThreshold * 3) / 2;
+            bool useMap8 = (mapThreshold8 > MapThreshold);
+            
             byte* mapX = stackalloc byte[MapSize];
             byte* mapY = stackalloc byte[MapSize];
-            int mapShift = CalculateMaps(deltasPtr, mapX, mapY);
+            ulong* mapX8 = stackalloc ulong[MapSize];
+            ulong* mapY8 = stackalloc ulong[MapSize];
+            int mapShift = CalculateMaps(deltasPtr, mapX, mapY, mapX8, mapY8, useMap8);
             
             octreeRef.Set(Octree);
             
@@ -225,7 +236,11 @@ namespace OctreeSplatting {
                     MapY = mapY,
                     MapShift = mapShift,
                     
+                    MapX8 = mapX8,
+                    MapY8 = mapY8,
+                    
                     MapThreshold = MapThreshold,
+                    MapThreshold8 = mapThreshold8,
                     
                     MaxLevel = Math.Min(MaxLevel >= 0 ? MaxLevel : int.MaxValue, maxLevel+1),
                     
@@ -368,7 +383,7 @@ namespace OctreeSplatting {
             }
         }
         
-        private unsafe int CalculateMaps(Delta* deltas, byte* mapX, byte* mapY) {
+        private unsafe int CalculateMaps(Delta* deltas, byte* mapX, byte* mapY, ulong* mapX8, ulong* mapY8, bool useMap8) {
             int maxSize = Math.Max(extentX, extentY) * 2 + 1;
             int safeSize = MapSize - 2; // ensure 1-pixel empty border, just to be safe
             int mapShift = 0;
@@ -378,6 +393,9 @@ namespace OctreeSplatting {
             
             int nodeExtentX = extentX >> 1;
             int nodeExtentY = extentY >> 1;
+            
+            int subNodeExtentX = nodeExtentX >> 1;
+            int subNodeExtentY = nodeExtentY >> 1;
             
             for (int octant = 0; octant < 8; octant++) {
                 int nodeX = mapCenter + deltas[octant].X;
@@ -396,6 +414,27 @@ namespace OctreeSplatting {
                 for (int y = minY; y <= maxY; y++) {
                     mapY[y] |= mask;
                 }
+                
+                if (useMap8) {
+                    for (int subOctant = 0; subOctant < 8; subOctant++) {
+                        int subNodeX = nodeX + (deltas[subOctant].X >> 1);
+                        int subNodeY = nodeY + (deltas[subOctant].Y >> 1);
+                        
+                        int subMinX = (subNodeX - subNodeExtentX) >> mapShift;
+                        int subMinY = (subNodeY - subNodeExtentY) >> mapShift;
+                        int subMaxX = (subNodeX + subNodeExtentX) >> mapShift;
+                        int subMaxY = (subNodeY + subNodeExtentY) >> mapShift;
+                        
+                        ulong subMask = ((ulong)1 << subOctant) << (octant * 8);
+                        
+                        for (int x = subMinX; x <= subMaxX; x++) {
+                            mapX8[x] |= subMask;
+                        }
+                        for (int y = subMinY; y <= subMaxY; y++) {
+                            mapY8[y] |= subMask;
+                        }
+                    }
+                }
             }
             
             return mapShift;
@@ -403,6 +442,11 @@ namespace OctreeSplatting {
         
         private unsafe struct OctreeRendererUnsafe {
             private int stencil;
+            
+            private uint fullQueue;
+            private ulong mask8Bit0;
+            private ulong mask8Bit1;
+            private ulong mask8Bit2;
             
             public Range2D Viewport;
             public int BufferShift;
@@ -423,7 +467,11 @@ namespace OctreeSplatting {
             public byte* MapY;
             public int MapShift;
             
+            public ulong* MapX8;
+            public ulong* MapY8;
+            
             public int MapThreshold;
+            public int MapThreshold8;
             
             public int MaxLevel;
             
@@ -442,6 +490,20 @@ namespace OctreeSplatting {
                 var stackTop = NodeStack;
                 
                 int* traceFront = TraceBuffer;
+                
+                fullQueue = ForwardQueues[255].Octants;
+                mask8Bit0 = 0;
+                mask8Bit1 = 0;
+                mask8Bit2 = 0;
+                for (uint item = 0, queue = fullQueue; item < 8; item++, queue >>= 4) {
+                    ulong octantMask = (ulong)255 << (int)((queue & 7) * 8);
+                    if ((item & 1) == 0) mask8Bit0 |= octantMask;
+                    if ((item & 2) == 0) mask8Bit1 |= octantMask;
+                    if ((item & 4) == 0) mask8Bit2 |= octantMask;
+                }
+                BoolByte octant8Bit0 = default;
+                BoolByte octant8Bit1 = default;
+                BoolByte octant8Bit2 = default;
                 
                 if (ShowBounds) {
                     stackTop[1] = stackTop[0];
@@ -556,18 +618,67 @@ namespace OctreeSplatting {
                             }
                         }
                     } else {
-                        int j = current.MinX + (current.MinY << BufferShift);
-                        int jEnd = current.MinX + (current.MaxY << BufferShift);
-                        int iEnd = current.MaxX + (current.MinY << BufferShift);
-                        int jStep = 1 << BufferShift;
-                        for (; j <= jEnd; j += jStep, iEnd += jStep) {
-                            for (int i = j; i <= iEnd; i++) {
-                                if (current.Z < Pixels[i].Depth) goto OcclusionTestPassed;
+                        if (current.MaxSize < MapThreshold8) {
+                            ulong mask8 = 0;
+                            for (int octant = 0, mshift = 0; octant < 8; octant++, mshift += 8) {
+                                var octantMask = Octree[node.Address + octant].Mask;
+                                if ((octantMask == 0) & (((node.Mask >> octant) & 1) != 0)) octantMask = 255;
+                                mask8 |= ((ulong)octantMask) << mshift;
                             }
-                            current.MinY++;
+                            
+                            int mapStartX = ((current.MinX << SubpixelBits) + SubpixelHalf) - (current.X - (mapHalf >> current.Level));
+                            int mapStartY = ((current.MinY << SubpixelBits) + SubpixelHalf) - (current.Y - (mapHalf >> current.Level));
+                            int mapShift = MapShift - current.Level;
+                            
+                            int j = current.MinX + (current.MinY << BufferShift);
+                            int jEnd = current.MinX + (current.MaxY << BufferShift);
+                            int iEnd = current.MaxX + (current.MinY << BufferShift);
+                            int jStep = 1 << BufferShift;
+                            
+                            for (int my = mapStartY; j <= jEnd; j += jStep, iEnd += jStep, my += SubpixelSize) {
+                                ulong maskY = MapY8[my >> mapShift] & mask8;
+                                for (int mx = mapStartX, i = j; i <= iEnd; i++, mx += SubpixelSize) {
+                                    ulong mask = MapX8[mx >> mapShift] & maskY;
+                                    
+                                    if ((mask != 0) & (current.Z < Pixels[i].Depth)) {
+                                        octant8Bit2.BoolValue = (mask & mask8Bit2) == 0;
+                                        mask &= mask8Bit2 ^ unchecked((ulong)(-octant8Bit2.ByteValue));
+                                        octant8Bit1.BoolValue = (mask & mask8Bit1) == 0;
+                                        mask &= mask8Bit1 ^ unchecked((ulong)(-octant8Bit1.ByteValue));
+                                        octant8Bit0.BoolValue = (mask & mask8Bit0) == 0;
+                                        int queueItem8 = octant8Bit0.ByteValue |
+                                                        (octant8Bit1.ByteValue << 1) |
+                                                        (octant8Bit2.ByteValue << 2);
+                                        int octant8 = (int)((fullQueue >> (queueItem8 << 2)) & 7);
+                                        
+                                        int z = current.Z + (Deltas[octant8].Z >> current.Level);
+                                        
+                                        if (z < Pixels[i].Depth) {
+                                            Pixels[i].Depth = z | stencil;
+                                            Pixels[i].Color24 = Octree[node.Address + octant8].Data;
+                                            *(traceFront++) = i;
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            continue;
                         }
-                        continue;
-                        OcclusionTestPassed:;
+                        
+                        {
+                            int j = current.MinX + (current.MinY << BufferShift);
+                            int jEnd = current.MinX + (current.MaxY << BufferShift);
+                            int iEnd = current.MaxX + (current.MinY << BufferShift);
+                            int jStep = 1 << BufferShift;
+                            for (; j <= jEnd; j += jStep, iEnd += jStep) {
+                                for (int i = j; i <= iEnd; i++) {
+                                    if (current.Z < Pixels[i].Depth) goto OcclusionTestPassed;
+                                }
+                                current.MinY++;
+                            }
+                            continue;
+                            OcclusionTestPassed:;
+                        }
                         
                         var queue = ReverseQueues[node.Mask].Octants;
                         
