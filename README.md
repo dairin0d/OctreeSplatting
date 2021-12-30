@@ -9,7 +9,7 @@ A short video demonstration of the main features:
 * https://vimeo.com/587174608
 * https://youtu.be/zok298fiwtM
 
-The Unity demo also contains an [experiment](OctreeSplatting/Unity/OctreeSplatting/Assets/VoxelStackRendering.Demo) with orthographic VoxelSpace-inspired rendering and line-of-sight effect. A video demonstration of this experiment can be seen here:
+The Unity demo also contains an [experiment](Unity/OctreeSplatting/Assets/VoxelStackRendering.Demo) with orthographic VoxelSpace-inspired rendering and line-of-sight effect. A video demonstration of this experiment can be seen here:
 
 * https://odysee.com/@dairin0d:c/CPU-voxel-stack-rendering:1
 * https://vimeo.com/660755417
