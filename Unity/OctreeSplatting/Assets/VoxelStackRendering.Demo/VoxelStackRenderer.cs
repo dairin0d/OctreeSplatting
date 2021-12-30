@@ -357,18 +357,16 @@ namespace VoxelStackRendering.Demo {
             var grid = model.Grid;
             var spanData = model.SpanData;
             
-            int my0 = 0, my1 = sizeY, dmy = 1;
-            int mx0 = 0, mx1 = sizeX, dmx = 1;
-            
             fixed (VoxelStackModel.ColumnInfo* gridPtr = grid)
             fixed (byte* spanDataPtr = spanData)
             fixed (PixelData* dataBufPtr = dataBuf)
             {
-                int iGY0 = 0, diGY = sizeX;
+                // Grid indices and index increments in X and Y directions
                 int iGX0 = 0, diGX = 1;
+                int iGY0 = 0, diGY = sizeX;
                 
+                // Make sure we traverse the grid in front-to-back order
                 if (X.z > 0) {
-                    mx0 = sizeX - 1; mx1 = -1; dmx = -1;
                     iGX0 = sizeX - 1; diGX = -diGX;
                     T.x += (sizeX - 1) * X.x;
                     T.y += (sizeX - 1) * X.y;
@@ -377,9 +375,7 @@ namespace VoxelStackRendering.Demo {
                     X.y = -X.y;
                     X.z = -X.z;
                 }
-                
                 if (Y.z > 0) {
-                    my0 = sizeY - 1; my1 = -1; dmy = -1;
                     iGY0 = (sizeY - 1) * sizeX; diGY = -diGY;
                     T.x += (sizeY - 1) * Y.x;
                     T.y += (sizeY - 1) * Y.y;
@@ -395,14 +391,14 @@ namespace VoxelStackRendering.Demo {
                 
                 var pY = T;
                 
-                for (int my = my0, iGY = iGY0; my != my1; my += dmy, iGY += diGY) {
-                    var pXY = pY;
+                for (int yCount = sizeY, iGY = iGY0; yCount > 0; yCount--, iGY += diGY) {
+                    var pXY = pY; // pXY is the projected position of the grid cell's floor
                     pY.x += Y.x;
                     pY.y += Y.y;
                     pY.z += Y.z;
                     
-                    for (int mx = mx0, iG = iGY + iGX0; mx != mx1; mx += dmx, iG += diGX) {
-                        var pXYZ = pXY;
+                    for (int xCount = sizeX, iG = iGY + iGX0; xCount > 0; xCount--, iG += diGX) {
+                        var pXYZ = pXY; // pXYZ is the projected position of a span's first (or last) voxel
                         pXY.x += X.x;
                         pXY.y += X.y;
                         pXY.z += X.z;
@@ -429,6 +425,7 @@ namespace VoxelStackRendering.Demo {
                         int diSpanStep = SpanStep;
                         int diDataStep = DataStep;
                         
+                        // Make sure the voxel spans are traversed in front-to-back order
                         if (Z.z >= 0) {
                             diSpanStep = -SpanStep;
                             diDataStep = -DataStep;
@@ -472,22 +469,29 @@ namespace VoxelStackRendering.Demo {
                             
                             int y = y0;
                             int yEnd = y1 + 1;
+                            
                             while (y <= y1) {
                                 var pixel = &dataBufPtr[y + iScreenX];
+                                
                                 if (pixel->Skip > y1) break;
+                                
                                 if (pixel->Skip > y) {
                                     y = pixel->Skip;
                                     pixel->Skip = yEnd;
                                     continue;
                                 }
+                                
                                 pixel->Skip = yEnd;
+                                
                                 int diData = (int)((y - yStart) * yScale);
                                 var spanColor = &spanDataPtr[iData2 + diData*diDataStep];
+                                
                                 pixel->R = spanColor[0];
                                 pixel->G = spanColor[1];
                                 pixel->B = spanColor[2];
                                 pixel->Weight = 1;
                                 pixel->Transparency = 0;
+                                
                                 y++;
                             }
                         }
@@ -674,13 +678,13 @@ namespace VoxelStackRendering.Demo {
                 var pY = origin;
                 
                 for (int tileY = rangeY.Start, secY = sectorY0; tileY != rangeY.Stop; tileY += rangeY.Step, secY++) {
-                    var pXY = pY;
+                    var pXY = pY; // pXY is the projected position of the grid cell's floor
                     pY.x += dY.x;
                     pY.y += dY.y;
                     pY.z += dY.z;
                     
                     for (int tileX = rangeX.Start, secX = sectorX0; tileX != rangeX.Stop; tileX += rangeX.Step, secX++) {
-                        var pXYZ = pXY;
+                        var pXYZ = pXY; // pXYZ is the projected position of a span's first voxel
                         pXY.x += dX.x;
                         pXY.y += dX.y;
                         pXY.z += dX.z;
@@ -694,7 +698,7 @@ namespace VoxelStackRendering.Demo {
                         ref var columnInfo = ref columnInfosPtr[secX + secY * radius];
                         if (columnInfo.SpanY == 0) break;
                         
-                        int hSpanOfs = radius - obs.z;
+                        int hSpanOffset = radius - obs.z;
                         int hSpanMin = obs.z - columnInfo.SpanY;
                         int hSpanMax = obs.z + columnInfo.SpanY - 1;
                         int ySpanMin = (pXYZ.y + hSpanMin * Z.y + ZyHalf) >> PrecisionBits;
@@ -744,24 +748,24 @@ namespace VoxelStackRendering.Demo {
                             var iData2 = iData;
                             iData += DataStep * spanSize;
                             
-                            int h0vis = h0;
-                            if (h0vis < hSpanMin) h0vis = hSpanMin;
-                            int h1vis = h1;
-                            if (h1vis > hSpanMax) h1vis = hSpanMax;
+                            int h0Clamped = h0;
+                            if (h0Clamped < hSpanMin) h0Clamped = hSpanMin;
+                            int h1Clamped = h1;
+                            if (h1Clamped > hSpanMax) h1Clamped = hSpanMax;
                             
-                            if (h0vis > h1vis) continue;
+                            if (h0Clamped > h1Clamped) continue;
                             
-                            int spanMin = h0vis - h0;
-                            int spanMax = h1vis - h0;
+                            int colMin = h0Clamped + hSpanOffset;
+                            int colMax = h1Clamped + hSpanOffset;
                             
-                            int colMin = h0vis + hSpanOfs;
-                            int colMax = h1vis + hSpanOfs;
-                            
-                            int y = pXYZ.y + h0vis * Z.y + ZyHalf;
+                            int y = pXYZ.y + h0Clamped * Z.y + ZyHalf;
                             
                             var alphaScale = spanAlpha / (255f * 255f);
                             
-                            for (int spanI = iData2 + spanMin * DataStep, colI = colMin; colI < colMax; spanI += DataStep, colI++, y += Z.y) {
+                            for (int spanI = iData2 + (h0Clamped - h0) * DataStep, colI = colMin; colI < colMax; spanI += DataStep, colI++, y += Z.y) {
+                                // radiusInfo contains:
+                                // 0..7 bits: opacity factor (for smooth fading near the edges of the vision range)
+                                // 8..31 bits: voxel's Y coordinate in the shadow buffer
                                 var radiusInfo = radiusInfoColumn[colI];
                                 
                                 int shadowY = radiusInfo >> 8;
