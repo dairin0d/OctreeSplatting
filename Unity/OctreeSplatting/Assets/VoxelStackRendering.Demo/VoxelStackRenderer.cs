@@ -7,30 +7,17 @@ using System.Runtime.InteropServices;
 using UnityEngine;
 
 namespace VoxelStackRendering.Demo {
-    public struct IterRange {
-        public int Start, Stop, Step;
-        public IterRange(int start, int stop, int step) {
-            Start = start;
-            Stop = stop;
-            Step = step;
-        }
-    }
-    
-    public struct Vector3i {
-        public int x, y, z;
-    }
-    
-    public struct VoxelStackInfo {
-        public int SpanStart;
-        public ushort SpanCount;
-        public ushort DataCount;
-    }
-    
     public class VoxelStackModel {
+        public struct ColumnInfo {
+            public int SpanStart;
+            public ushort SpanCount;
+            public ushort DataCount;
+        }
+        
         public int SizeX;
         public int SizeY;
         public int SizeZ;
-        public VoxelStackInfo[] Grid;
+        public ColumnInfo[] Grid;
         public byte[] SpanData;
         
         public int ClampX(int x) {
@@ -55,7 +42,7 @@ namespace VoxelStackRendering.Demo {
             SizeY = sizeY;
             SizeZ = 255;
             
-            Grid = new VoxelStackInfo[SizeX * SizeY];
+            Grid = new ColumnInfo[SizeX * SizeY];
             
             using (var stream = new MemoryStream()) {
                 var writer = new BinaryWriter(stream);
@@ -111,7 +98,7 @@ namespace VoxelStackRendering.Demo {
         public void FromOctree(OctreeSplatting.OctreeNode[] octree, int maxLevel) {
             SizeX = SizeY = SizeZ = 1 << maxLevel;
             
-            Grid = new VoxelStackInfo[SizeX * SizeY];
+            Grid = new ColumnInfo[SizeX * SizeY];
             
             var spansGrid = new List<int>[SizeX * SizeY];
             var colorsGrid = new List<OctreeSplatting.Color24>[SizeX * SizeY];
@@ -253,6 +240,19 @@ namespace VoxelStackRendering.Demo {
     }
     
     public class VoxelStackRenderer : MonoBehaviour {
+        private struct IterRange {
+            public int Start, Stop, Step;
+            public IterRange(int start, int stop, int step) {
+                Start = start;
+                Stop = stop;
+                Step = step;
+            }
+        }
+        
+        private struct Vector3i {
+            public int x, y, z;
+        }
+        
         private struct PixelData {
             public float R, G, B, Weight;
             public float Transparency;
@@ -595,7 +595,7 @@ namespace VoxelStackRendering.Demo {
             int my0 = 0, my1 = sizeY, dmy = 1;
             int mx0 = 0, mx1 = sizeX, dmx = 1;
             
-            fixed (VoxelStackInfo* gridPtr = grid)
+            fixed (VoxelStackModel.ColumnInfo* gridPtr = grid)
             fixed (byte* spanDataPtr = spanData)
             fixed (PixelData* dataBufPtr = dataBuf)
             {
@@ -804,7 +804,7 @@ namespace VoxelStackRendering.Demo {
             sectorInfos[2] = sectorPN;
             sectorInfos[3] = sectorNN;
             
-            fixed (VoxelStackInfo* gridPtr = grid)
+            fixed (VoxelStackModel.ColumnInfo* gridPtr = grid)
             fixed (byte* spanDataPtr = spanData)
             fixed (PixelData* dataBufPtr = dataBuf)
             fixed (int* radiusInfosPtr = radiusInfos)
@@ -864,7 +864,7 @@ namespace VoxelStackRendering.Demo {
             public int angularResolutionX;
             public int angularResolutionY;
             
-            public VoxelStackInfo* gridPtr;
+            public VoxelStackModel.ColumnInfo* gridPtr;
             public byte* spanDataPtr;
             public PixelData* dataBufPtr;
             public int* radiusInfosPtr;
