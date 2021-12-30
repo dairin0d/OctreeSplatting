@@ -559,10 +559,6 @@ namespace VoxelStackRendering.Demo {
         private unsafe void DrawSkip(Matrix4x4 matrix) {
             int subpixelSize = 1 << PrecisionBits;
             
-            // matrix.m03 -= (matrix.m00 * model.SizeX + matrix.m10 * model.SizeY) * 0.5f;
-            // matrix.m13 -= (matrix.m01 * model.SizeX + matrix.m11 * model.SizeY) * 0.5f;
-            // matrix.m23 -= (matrix.m02 * model.SizeX + matrix.m12 * model.SizeY) * 0.5f;
-            
             matrix.m03 -= (matrix.m00 * ObservationPoint.x + matrix.m10 * ObservationPoint.y + matrix.m20 * ObservationPoint.z);
             matrix.m13 -= (matrix.m01 * ObservationPoint.x + matrix.m11 * ObservationPoint.y + matrix.m21 * ObservationPoint.z);
             matrix.m23 -= (matrix.m02 * ObservationPoint.x + matrix.m12 * ObservationPoint.y + matrix.m22 * ObservationPoint.z);
@@ -738,10 +734,6 @@ namespace VoxelStackRendering.Demo {
         private unsafe void DrawVis(Matrix4x4 matrix) {
             int subpixelSize = 1 << PrecisionBits;
             
-            // matrix.m03 -= (matrix.m00 * model.SizeX + matrix.m10 * model.SizeY) * 0.5f;
-            // matrix.m13 -= (matrix.m01 * model.SizeX + matrix.m11 * model.SizeY) * 0.5f;
-            // matrix.m23 -= (matrix.m02 * model.SizeX + matrix.m12 * model.SizeY) * 0.5f;
-            
             matrix.m03 -= (matrix.m00 * ObservationPoint.x + matrix.m10 * ObservationPoint.y + matrix.m20 * ObservationPoint.z);
             matrix.m13 -= (matrix.m01 * ObservationPoint.x + matrix.m11 * ObservationPoint.y + matrix.m21 * ObservationPoint.z);
             matrix.m23 -= (matrix.m02 * ObservationPoint.x + matrix.m12 * ObservationPoint.y + matrix.m22 * ObservationPoint.z);
@@ -852,23 +844,6 @@ namespace VoxelStackRendering.Demo {
                     sectorRenderer.sectorInfo = sectorInfos[sectorI];
                     sectorRenderer.DrawSector();
                 }
-                
-                // int angularResolution = AngularResolution;
-                // int angularResolutionH = AngularResolution * 2;
-                // for (int y = 0; y < angularResolutionH; y++) {
-                //     if (y > screenH) continue;
-                //     for (int x = 0; x < angularResolution; x++) {
-                //         if (x > screenW) continue;
-                //         var opacity = sectorShadows[x * angularResolutionH + y].Opacity;
-                //         if (opacity > 255) opacity = 255;
-                //         ref var pixel = ref dataBuf[y + x * screenH];
-                //         pixel.R = opacity;
-                //         pixel.G = opacity;
-                //         pixel.B = opacity;
-                //         pixel.Weight = 1;
-                //         pixel.Transparency = 0;
-                //     }
-                // }
             }
         }
         
@@ -977,17 +952,12 @@ namespace VoxelStackRendering.Demo {
                         }
                         
                         int shadowX = (columnInfo.MinX + columnInfo.MaxX) >> 1;
-                        int shadowXL = shadowX - 1;
-                        int shadowXR = shadowX + 1;
-                        if (shadowXL < 0) shadowXL = 0;
-                        if (shadowXR >= angularResolutionX) shadowXL = angularResolutionX - 1;
                         var shadowLine = sectorShadowsPtr + shadowX * angularResolutionY;
-                        var shadowLineL = sectorShadowsPtr + shadowXL * angularResolutionY;
-                        var shadowLineR = sectorShadowsPtr + shadowXR * angularResolutionY;
                         
                         var radiusInfoColumn = radiusInfosPtr + columnInfo.Radius * radiusColumnSize;
                         
                         const int SpanStep = 2;
+                        const int DataStep = 3;
                         
                         int iSpan0 = gridCell.SpanStart;
                         int nSpans = gridCell.SpanCount;
@@ -1005,8 +975,6 @@ namespace VoxelStackRendering.Demo {
                             h1 = h0 + spanSize;
                             
                             if (spanAlpha == 0) continue;
-                            
-                            const int DataStep = 3;
                             
                             var iData2 = iData;
                             iData += DataStep * spanSize;
