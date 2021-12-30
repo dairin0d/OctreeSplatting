@@ -52,7 +52,7 @@ Still, no tutorials or articles on software rendering I've seen back then have m
 [pnd3d]: http://advsys.net/ken/voxlap/pnd3d.htm "PND3D by Ken Silverman"
 [epic-point-cloud]: https://www.youtube.com/watch?v=W-hOoBa1hxo "Epic Point Cloud renderer by Richard Svensson"
 [pwtech]: https://github.com/EyeGem/pwtech "PWTECH by EyeGem"
-[phreda4]: https://github.com/phreda4/r4 "p4 by Pablo Hugo Reda"
+[phreda4]: https://github.com/phreda4/r4 "r4 by Pablo Hugo Reda"
 
 So, lacking a well-established solution to realtime pointcloud/voxel rendering on CPU, I set out to do my own experiments. A lot of the things I tried didn't work -- but, eventually, I got to the point where my single-threaded renderer could run in 640x480 at realtime-ish framerates. Granted, I'm writing it in C# / Unity, so there's plenty of room for more low-level optimizations... but even in the theoretically optimal case, [it would still be miles behind](http://www.codersnotes.com/notes/euclideon-explained/ "Debunking Euclideon's Unlimited Detail Tech by Richard Mitton") any GPU-based engine.
 
@@ -777,6 +777,12 @@ Pretty compelling! And most of the time, it looks OK too. But beware of occasion
 
 ![map-at-3-artifacts](images/map_at_3_artifacts.png "Artifacts when using octant map at 3x3 pixels. Those are supposed to be straight lines!")
 
+As a compromise, we can try to use a ["higher fidelity" map](https://github.com/dairin0d/OctreeSplatting/commit/cd24d35a131a8abc6ef915ef44f302f0fda71543) at 3x3 size (e.g., a map containing 64-bit masks, tested against the combined masks of the node's grandchildren). This reduces the above-mentioned artifacts, though obviously with a smaller performance gain:
+
+| NET5 | Mono | IL2CPP |
+| :-: | :-: | :-: |
+| 33 → 23 | 49 → 37 | 34 → 21 |
+
 ### **#2: Job quarter done**
 
 If a full task is too heavy for one frame, it's often worth seeking ways to distribute the work over multiple frames. The technique we can use in this case is known as ["temporal upscaling"](https://docs.unrealengine.com/4.26/en-US/RenderingAndGraphics/ScreenPercentage/), which boils down to rendering only every Nth pixel per frame.
@@ -978,7 +984,7 @@ Good luck in your endeavors!
 
 I had a couple of "historical context" notes that didn't quite fit the flow of the main text. It's nothing important, but if you're curious -- here they are:
 
-### **Comparing notes with PND3D and Atomontage**
+### **Comparing notes with PND3D, Atomontage and pabloreda's renderer**
 
 Near the end of 2018, Ken Silverman [released](http://advsys.net/ken/voxlap/pnd3d.htm) the source code for his PND3D demo (although I didn't find out about that until mid-2021, when I started writing this article), alongside a readme file where he described the tricks used in his engine. Interestingly, there aren't that many:
 
@@ -1000,6 +1006,10 @@ Indisputably, PND3D is very fast (though it would be cool to make an apples-to-a
 
 As for Atomontage, it's not so much comparing notes as just one interesting bit of information I've stumbled across. It seems to be using raycasting (at least according to the title of [this 2016 video](https://www.youtube.com/watch?v=R9CA8i2Of_g)), but in 2010 Branislav mentioned (in comments) that ["AE is still mostly CPU-based"](https://www.youtube.com/watch?v=_CCZIBDt1uM) and ["we had the necessary hardware some 7-10y(!!!) ago already"](https://www.youtube.com/watch?v=1sfWYUgxGBE). I can't even *begin* to comprehend what sort of crazy raycasting algorithm he must have invented that could do Atomontage-quality realtime raycasting on the 2000s-era CPUs... Or maybe I'm just reading it the wrong way. But hey, kudos to the man if that's actually true! Perhaps he's the one who will finally prove the impracticality of CPU renderers wrong :-)
 
+*Edit (December 2021):* Well, an early version of Atomontage got finally [released](https://venturebeat.com/2021/11/30/atomontage-launches-early-version-of-cloud-based-volumetric-graphics/), and at least in the web demo it doesn't use any sort of CPU rendering (in fact, some people [suspect](https://www.reddit.com/r/VoxelGameDev/comments/r5tsfb/comment/hmry22t/?utm_source=share&utm_medium=web2x&context=3) it might not even use raycasting, and simply relies on traditional polygon rendering). Perhaps *that's* what Branislav meant when he mentioned 2000s-era hardware..?
+
+*Edit (December 2021):* A few months after I published these results, I stumbled upon a [series of blog posts](https://www.gamedev.net/blogs/blog/4192-experimental-graphics-technology/) written in 2020 by Pablo Reda, where he outlines the design of his software octree raycaster. Though our approaches obviously differ in some ways, it seems we ended up using quite a number of the same core ideas. I guess it goes to show that these sorts of optimizations are pretty fundamental, and many programmers would eventually come to them after thinking long enough :-)
+
 ### **Other things I tried**
 
 #### **▸ Classic octree raycasting**
@@ -1018,7 +1028,7 @@ This was inspired by the ["Caviar" 3D model format](https://alphacentauri2.info/
 
 This is a [tried-and-true](https://github.com/s-macke/VoxelSpace) [method](https://web.archive.org/web/20050206144506/http://www.flipcode.com/articles/voxelland_part02.shtml), most notably used in some early [Novalogic games](https://en.wikipedia.org/wiki/Voxel_Space). Originally, it could only handle heightmaps, but was later [extended](http://www.advsys.net/ken/voxlap.htm) by Ken Silverman to render RLE-encoded [stacks of voxels](https://stackoverflow.com/questions/3794306/can-someone-describe-the-algorithm-used-by-ken-silvermans-voxlap-engine) at arbitrary orientations. There was also an isometric game [Hexplore](https://www.mobygames.com/game/windows/hexplore/screenshots) which, most likely, used a similar approach.
 
-I made an attempt to do something similar, but didn't go very far in that direction. Under certain limitations, this could be quite fast, but in general it just doesn't scale as well as tree-based methods.
+I made an attempt to do [something similar](https://github.com/dairin0d/OctreeSplatting/blob/77956f60650ae02d6d960a03967579470af0f47e/Unity/OctreeSplatting/Assets/VoxelStackRendering.Demo/VoxelStackRenderer.cs), but didn't go very far in that direction. Under certain limitations, this could be quite fast, but in general it just doesn't scale as well as tree-based methods.
 
 #### **▸ Splatting-like "raycasting"**
 
