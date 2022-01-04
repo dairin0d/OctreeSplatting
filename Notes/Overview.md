@@ -777,7 +777,7 @@ Pretty compelling! And most of the time, it looks OK too. But beware of occasion
 
 ![map-at-3-artifacts](images/map_at_3_artifacts.png "Artifacts when using octant map at 3x3 pixels. Those are supposed to be straight lines!")
 
-As a compromise, we can try to use a ["higher fidelity" map](https://github.com/dairin0d/OctreeSplatting/commit/cd24d35a131a8abc6ef915ef44f302f0fda71543) at 3x3 size (e.g., a map containing 64-bit masks, tested against the combined masks of the node's grandchildren). This reduces the above-mentioned artifacts, though obviously with a smaller performance gain:
+As a compromise, we can try to use a ["higher fidelity" map](https://github.com/dairin0d/OctreeSplatting/commit/cd24d35a131a8abc6ef915ef44f302f0fda71543) at 3x3 size (e.g., a map containing 64-bit masks, tested against the combined masks of the node's children). This reduces the above-mentioned artifacts, though obviously with a smaller performance gain:
 
 | NET5 | Mono | IL2CPP |
 | :-: | :-: | :-: |
