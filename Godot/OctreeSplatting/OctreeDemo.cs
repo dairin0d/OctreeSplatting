@@ -2,7 +2,7 @@ using Godot;
 using System.Runtime.InteropServices;
 
 namespace OctreeSplatting.GodotDemo {
-	public class OctreeDemo : TextureRect {
+	public partial class OctreeDemo : TextureRect {
 		private OctreeSplatting.Demo.DemoController demoController;
 		
 		private int width = 640;
@@ -17,15 +17,13 @@ namespace OctreeSplatting.GodotDemo {
 		private Vector2 mouseSpeed;
 		
 		public override void _Ready() {
-			OS.SetWindowSize(new Vector2(width, height));
+			DisplayServer.WindowSetSize(new Vector2I(width, height));
 			
 			colorbuffer = new byte[width*height*bytesPerPixel];
 			
-			image = new Image();
-			image.CreateFromData(width, height, false, imageFormat, colorbuffer);
+			image = Image.CreateFromData(width, height, false, imageFormat, colorbuffer);
 			
-			imageTexture = new ImageTexture();
-			imageTexture.CreateFromImage(image);
+			imageTexture = ImageTexture.CreateFromImage(image);
 			
 			this.Texture = imageTexture;
 			
@@ -34,17 +32,17 @@ namespace OctreeSplatting.GodotDemo {
 
 		public override void _Input(InputEvent inputEvent) {
 			if (inputEvent is InputEventMouseMotion mouseEvent) {
-				mouseSpeed = mouseEvent.Speed;
+				mouseSpeed = mouseEvent.Velocity;
 			}
 		}
 
-		public override void _Process(float deltaTime) {
-			ProcessInput(deltaTime);
+		public override void _Process(double deltaTime) {
+			ProcessInput((float)deltaTime);
 			
 			UpdateView();
 			
-			image.CreateFromData(width, height, false, imageFormat, colorbuffer);
-			imageTexture.SetData(image);
+			image.SetData(width, height, false, imageFormat, colorbuffer);
+			imageTexture.SetImage(image);
 			
 			mouseSpeed = new Vector2(0, 0);
 		}
@@ -78,7 +76,7 @@ namespace OctreeSplatting.GodotDemo {
 
 
 			if (Input.IsActionJustPressed("ui_cancel")) {
-				GetTree().Notification(MainLoop.NotificationWmQuitRequest);
+				GetTree().Root.PropagateNotification((int)NotificationWMCloseRequest);
 			}
 
 			if (Input.IsActionJustPressed("demo_shape_point")) {
@@ -138,16 +136,16 @@ namespace OctreeSplatting.GodotDemo {
 
 			const float cameraSpeed = 1.5f;
 			movement *= cameraSpeed * deltaTime;
-			demoController.MoveCamera(movement.x, movement.y, movement.z);
+			demoController.MoveCamera(movement.X, movement.Y, movement.Z);
 
 			var delta = mouseSpeed;
 
 			if (Input.IsActionPressed("demo_perspective")) {
-				demoController.Perspective = demoController.Perspective - delta.y * 0.001f;
+				demoController.Perspective = demoController.Perspective - delta.Y * 0.001f;
 			} else if (Input.IsActionPressed("demo_rotate")) {
 				const float sensitivity = 0.4f;
-				demoController.CameraYaw -= delta.x * sensitivity * deltaTime;
-				demoController.CameraPitch -= delta.y * sensitivity * deltaTime;
+				demoController.CameraYaw -= delta.X * sensitivity * deltaTime;
+				demoController.CameraPitch -= delta.Y * sensitivity * deltaTime;
 			}
 
 			// Mouse wheel only sends released events
