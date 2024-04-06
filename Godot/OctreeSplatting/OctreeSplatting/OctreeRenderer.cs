@@ -75,8 +75,7 @@ namespace OctreeSplatting {
         
         // Viewport & renderbuffer info
         public Range2D Viewport;
-        public int BufferShift;
-        public PixelData[] Pixels;
+        public Renderbuffer Renderbuffer;
         
         // Model info
         public Matrix4x4 Matrix;
@@ -109,16 +108,15 @@ namespace OctreeSplatting {
         private UnsafeRef queuesRef;
         private UnsafeRef cubeNodesRef;
         
-        public void Begin(PixelData[] pixels, int bufferShift, Range2D viewport) {
-            Pixels = pixels;
-            BufferShift = bufferShift;
+        public void Begin(Renderbuffer renderbuffer, Range2D viewport) {
+            Renderbuffer = renderbuffer;
             Viewport = viewport;
             
             Begin();
         }
         
         public void Begin() {
-            pixelsRef.Set(Pixels);
+            pixelsRef.Set(Renderbuffer.DataPixels);
             queuesRef.Set(OctantOrder.SparseQueues);
             cubeNodesRef.Set(CubeOctree.CubeNodes);
         }
@@ -142,10 +140,11 @@ namespace OctreeSplatting {
             
             var pixelsPtr = (PixelData*)pixelsRef;
             
-            int j = region.MinX + (region.MinY << BufferShift);
-            int jEnd = region.MinX + (region.MaxY << BufferShift);
-            int iEnd = region.MaxX + (region.MinY << BufferShift);
-            int jStep = 1 << BufferShift;
+            var bufferShift = Renderbuffer.ShiftX;
+            int j = region.MinX + (region.MinY << bufferShift);
+            int jEnd = region.MinX + (region.MaxY << bufferShift);
+            int iEnd = region.MaxX + (region.MinY << bufferShift);
+            int jStep = 1 << bufferShift;
             for (; j <= jEnd; j += jStep, iEnd += jStep) {
                 for (int i = j; i <= iEnd; i++) {
                     if (z < pixelsPtr[i].Depth) return false;
@@ -204,7 +203,7 @@ namespace OctreeSplatting {
             {
                 var unsafeRenderer = new OctreeRendererUnsafe {
                     Viewport = Viewport,
-                    BufferShift = BufferShift,
+                    BufferShift = Renderbuffer.ShiftX,
                     Pixels = pixelsPtr,
                     
                     Octree = octreePtr,
