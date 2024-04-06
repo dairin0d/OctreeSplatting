@@ -44,7 +44,7 @@ namespace OctreeSplatting {
             
             var defaultValue = default(PixelData);
             defaultValue.Depth = SizeZ;
-            defaultValue.Color32 = background;
+            defaultValue.Color = background;
             
             fixed (PixelData* dataPtr = dataPixels)
             {
@@ -83,7 +83,7 @@ namespace OctreeSplatting {
                         byte originalG = colorPixel->G;
                         byte originalB = colorPixel->B;
                         
-                        *colorPixel = dataPixel->Color32;
+                        *colorPixel = dataPixel->Color;
                         *finalPixel = *colorPixel;
                     }
                 }

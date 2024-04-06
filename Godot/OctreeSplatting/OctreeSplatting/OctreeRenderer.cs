@@ -525,7 +525,7 @@ namespace OctreeSplatting {
                         if (current.Z < Pixels[i].Depth) {
                             if ((node.Mask == 0) | (MapThreshold > 1)) {
                                 Pixels[i].Depth = current.Z | stencil;
-                                Pixels[i].Color24 = node.Data;
+                                Pixels[i].Color.RGB = node.Data;
                                 *(traceFront++) = i;
                             } else {
                                 int mx = ((current.MinX << SubpixelBits) + SubpixelHalf) - (current.X - (mapHalf >> current.Level));
@@ -540,7 +540,7 @@ namespace OctreeSplatting {
                                     
                                     if (z < Pixels[i].Depth) {
                                         Pixels[i].Depth = z | stencil;
-                                        Pixels[i].Color24 = Octree[node.Address + octant].Data;
+                                        Pixels[i].Color.RGB = Octree[node.Address + octant].Data;
                                         *(traceFront++) = i;
                                     }
                                 }
@@ -584,7 +584,7 @@ namespace OctreeSplatting {
                             for (int i = j; i <= iEnd; i++) {
                                 if (current.Z < Pixels[i].Depth) {
                                     Pixels[i].Depth = current.Z | stencil;
-                                    Pixels[i].Color24 = node.Data;
+                                    Pixels[i].Color.RGB = node.Data;
                                     *(traceFront++) = i;
                                 }
                             }
@@ -611,7 +611,7 @@ namespace OctreeSplatting {
                                     
                                     if (z < Pixels[i].Depth) {
                                         Pixels[i].Depth = z | stencil;
-                                        Pixels[i].Color24 = Octree[node.Address + octant].Data;
+                                        Pixels[i].Color.RGB = Octree[node.Address + octant].Data;
                                         *(traceFront++) = i;
                                     }
                                 }
@@ -655,7 +655,7 @@ namespace OctreeSplatting {
                                         
                                         if (z < Pixels[i].Depth) {
                                             Pixels[i].Depth = z | stencil;
-                                            Pixels[i].Color24 = Octree[node.Address + octant8].Data;
+                                            Pixels[i].Color.RGB = Octree[node.Address + octant8].Data;
                                             *(traceFront++) = i;
                                         }
                                     }
@@ -757,7 +757,7 @@ namespace OctreeSplatting {
                     for (int i = j; i <= iEnd; i++) {
                         if ((distance2 <= radius2) & (current.Z < Pixels[i].Depth)) {
                             Pixels[i].Depth = current.Z | stencil;
-                            Pixels[i].Color24 = color;
+                            Pixels[i].Color.RGB = color;
                             *(traceFront++) = i;
                         }
                         distance2 += (rowDX << stepShift) + stepAdd2;
@@ -791,7 +791,7 @@ namespace OctreeSplatting {
                         int i = current.MinX + (current.MinY << BufferShift);
                         if (current.Z < Pixels[i].Depth) {
                             Pixels[i].Depth = current.Z | stencil;
-                            Pixels[i].Color24 = color;
+                            Pixels[i].Color.RGB = color;
                             *(traceFront++) = i;
                         }
                     } else if (current.MaxSize < mapThreshold) {
@@ -816,7 +816,7 @@ namespace OctreeSplatting {
                                     
                                     if (z < Pixels[i].Depth) {
                                         Pixels[i].Depth = z | stencil;
-                                        Pixels[i].Color24 = color;
+                                        Pixels[i].Color.RGB = color;
                                         *(traceFront++) = i;
                                     }
                                 }
