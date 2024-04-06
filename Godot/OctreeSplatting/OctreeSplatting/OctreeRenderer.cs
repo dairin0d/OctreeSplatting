@@ -413,8 +413,6 @@ namespace OctreeSplatting {
         }
         
         private unsafe struct OctreeRendererUnsafe {
-            private int stencil;
-            
             private uint fullQueue;
             private ulong mask8Bit0;
             private ulong mask8Bit1;
@@ -475,11 +473,8 @@ namespace OctreeSplatting {
                 
                 if (ShowBounds) {
                     stackTop[1] = stackTop[0];
-                    stencil = 0;
                     RenderCube(stackTop + 1, BoundsColor, CubeOctree.WireCube);
                 }
-                
-                stencil = int.MinValue;
                 
                 while (stackTop >= NodeStack) {
                     // We need a copy anyway for subnode processing
@@ -492,7 +487,7 @@ namespace OctreeSplatting {
                         int i = current.MinX + (current.MinY << BufferShift);
                         if (current.Z < Pixels[i].Depth) {
                             if ((node.Mask == 0) | (MapThreshold > 1)) {
-                                Pixels[i].Depth = current.Z | stencil;
+                                Pixels[i].Depth = current.Z;
                                 Pixels[i].Color.RGB = node.Data;
                             } else {
                                 int mx = ((current.MinX << SubpixelBits) + SubpixelHalf) - (current.X - (mapHalf >> current.Level));
@@ -506,7 +501,7 @@ namespace OctreeSplatting {
                                     int z = current.Z + (Deltas[octant].Z >> current.Level);
                                     
                                     if (z < Pixels[i].Depth) {
-                                        Pixels[i].Depth = z | stencil;
+                                        Pixels[i].Depth = z;
                                         Pixels[i].Color.RGB = Octree[node.Address + octant].Data;
                                     }
                                 }
@@ -549,7 +544,7 @@ namespace OctreeSplatting {
                         for (; j <= jEnd; j += jStep, iEnd += jStep) {
                             for (int i = j; i <= iEnd; i++) {
                                 if (current.Z < Pixels[i].Depth) {
-                                    Pixels[i].Depth = current.Z | stencil;
+                                    Pixels[i].Depth = current.Z;
                                     Pixels[i].Color.RGB = node.Data;
                                 }
                             }
@@ -575,7 +570,7 @@ namespace OctreeSplatting {
                                     int z = current.Z + (Deltas[octant].Z >> current.Level);
                                     
                                     if (z < Pixels[i].Depth) {
-                                        Pixels[i].Depth = z | stencil;
+                                        Pixels[i].Depth = z;
                                         Pixels[i].Color.RGB = Octree[node.Address + octant].Data;
                                     }
                                 }
@@ -618,7 +613,7 @@ namespace OctreeSplatting {
                                         int z = current.Z + (Deltas[octant8].Z >> current.Level);
                                         
                                         if (z < Pixels[i].Depth) {
-                                            Pixels[i].Depth = z | stencil;
+                                            Pixels[i].Depth = z;
                                             Pixels[i].Color.RGB = Octree[node.Address + octant8].Data;
                                         }
                                     }
@@ -712,7 +707,7 @@ namespace OctreeSplatting {
                     int distance2 = distance2Y, rowDX = startDX;
                     for (int i = j; i <= iEnd; i++) {
                         if ((distance2 <= radius2) & (current.Z < Pixels[i].Depth)) {
-                            Pixels[i].Depth = current.Z | stencil;
+                            Pixels[i].Depth = current.Z;
                             Pixels[i].Color.RGB = color;
                         }
                         distance2 += (rowDX << stepShift) + stepAdd2;
@@ -745,7 +740,7 @@ namespace OctreeSplatting {
                     if (current.MaxSize < 1) {
                         int i = current.MinX + (current.MinY << BufferShift);
                         if (current.Z < Pixels[i].Depth) {
-                            Pixels[i].Depth = current.Z | stencil;
+                            Pixels[i].Depth = current.Z;
                             Pixels[i].Color.RGB = color;
                         }
                     } else if (current.MaxSize < mapThreshold) {
@@ -769,7 +764,7 @@ namespace OctreeSplatting {
                                     int z = current.Z + (Deltas[octant].Z >> current.Level);
                                     
                                     if (z < Pixels[i].Depth) {
-                                        Pixels[i].Depth = z | stencil;
+                                        Pixels[i].Depth = z;
                                         Pixels[i].Color.RGB = color;
                                     }
                                 }
