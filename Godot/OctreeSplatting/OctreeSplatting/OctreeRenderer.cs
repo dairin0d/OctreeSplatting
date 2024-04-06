@@ -74,8 +74,6 @@ namespace OctreeSplatting {
         private int ZX, ZY, ZZ;
         private int TX, TY, TZ;
         
-        private UnsafeRef depthDataRef;
-        private UnsafeRef colorDataRef;
         private UnsafeRef octreeRef;
         private UnsafeRef queuesRef;
         private UnsafeRef cubeNodesRef;
@@ -88,15 +86,11 @@ namespace OctreeSplatting {
         }
         
         public void Begin() {
-            depthDataRef.Set(Renderbuffer.DepthData);
-            colorDataRef.Set(Renderbuffer.ColorData);
             queuesRef.Set(OctantOrder.SparseQueues);
             cubeNodesRef.Set(CubeOctree.CubeNodes);
         }
         
         public void Finish() {
-            depthDataRef.Clear();
-            colorDataRef.Clear();
             octreeRef.Clear();
             queuesRef.Clear();
             cubeNodesRef.Clear();
@@ -112,16 +106,15 @@ namespace OctreeSplatting {
             
             if (z < 0) return false;
             
-            var depthDataPtr = (int*)depthDataRef;
+            var buffers = Renderbuffer.GetBuffers();
             
-            var bufferShift = Renderbuffer.ShiftX;
-            int j = region.MinX + (region.MinY << bufferShift);
-            int jEnd = region.MinX + (region.MaxY << bufferShift);
-            int iEnd = region.MaxX + (region.MinY << bufferShift);
-            int jStep = 1 << bufferShift;
+            int j = region.MinX + (region.MinY << buffers.Shift);
+            int jEnd = region.MinX + (region.MaxY << buffers.Shift);
+            int iEnd = region.MaxX + (region.MinY << buffers.Shift);
+            int jStep = 1 << buffers.Shift;
             for (; j <= jEnd; j += jStep, iEnd += jStep) {
                 for (int i = j; i <= iEnd; i++) {
-                    if (z < depthDataPtr[i]) return false;
+                    if (z < buffers.Depth[i]) return false;
                 }
                 lastY++;
             }
@@ -170,17 +163,16 @@ namespace OctreeSplatting {
             
             octreeRef.Set(Octree);
             
-            var depthDataPtr = (int*)depthDataRef;
-            var colorDataPtr = (Color32*)colorDataRef;
+            var buffers = Renderbuffer.GetBuffers();
             var octreePtr = (OctreeNode*)octreeRef;
             var queuesPtr = (OctantOrder.Queue*)queuesRef;
             var cubeNodesPtr = (uint*)cubeNodesRef;
             {
                 var unsafeRenderer = new OctreeRendererUnsafe {
                     Viewport = Viewport,
-                    BufferShift = Renderbuffer.ShiftX,
-                    DepthData = depthDataPtr,
-                    ColorData = colorDataPtr,
+                    BufferShift = buffers.Shift,
+                    DepthData = buffers.Depth,
+                    ColorData = buffers.Color,
                     
                     Octree = octreePtr,
                     
