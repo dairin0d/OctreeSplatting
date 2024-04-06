@@ -92,8 +92,6 @@ namespace OctreeSplatting {
         
         public SplatShape Shape = SplatShape.Rectangle;
         
-        public int DrawnPixels;
-        
         public Color24 BoundsColor = new Color24 {R = 192, G = 0, B = 0};
         public bool ShowBounds;
         
@@ -106,12 +104,9 @@ namespace OctreeSplatting {
         private int ZX, ZY, ZZ;
         private int TX, TY, TZ;
         
-        private int[] traceBuffer;
-        
         private UnsafeRef pixelsRef;
         private UnsafeRef octreeRef;
         private UnsafeRef queuesRef;
-        private UnsafeRef traceBufferRef;
         private UnsafeRef cubeNodesRef;
         
         public void Begin(PixelData[] pixels, int bufferShift, Range2D viewport) {
@@ -123,11 +118,8 @@ namespace OctreeSplatting {
         }
         
         public void Begin() {
-            InitializeTraceBuffer();
-            
             pixelsRef.Set(Pixels);
             queuesRef.Set(OctantOrder.SparseQueues);
-            traceBufferRef.Set(traceBuffer);
             cubeNodesRef.Set(CubeOctree.CubeNodes);
         }
         
@@ -135,7 +127,6 @@ namespace OctreeSplatting {
             pixelsRef.Clear();
             octreeRef.Clear();
             queuesRef.Clear();
-            traceBufferRef.Clear();
             cubeNodesRef.Clear();
         }
         
@@ -165,8 +156,6 @@ namespace OctreeSplatting {
         }
         
         public unsafe Result Render() {
-            DrawnPixels = 0;
-            
             int maxLevel = CalculateMaxLevel();
             if (maxLevel < 0) return Result.TooBig;
             
@@ -211,7 +200,6 @@ namespace OctreeSplatting {
             var pixelsPtr = (PixelData*)pixelsRef;
             var octreePtr = (OctreeNode*)octreeRef;
             var queuesPtr = (OctantOrder.Queue*)queuesRef;
-            var traceBufferPtr = (int*)traceBufferRef;
             var cubeNodesPtr = (uint*)cubeNodesRef;
             {
                 var unsafeRenderer = new OctreeRendererUnsafe {
@@ -229,8 +217,6 @@ namespace OctreeSplatting {
                     
                     ForwardQueues = queuesPtr + forwardKey,
                     ReverseQueues = queuesPtr + reverseKey,
-                    
-                    TraceBuffer = traceBufferPtr,
                     
                     MapX = mapX,
                     MapY = mapY,
@@ -254,23 +240,10 @@ namespace OctreeSplatting {
                     ShowBounds = ShowBounds,
                 };
                 
-                DrawnPixels = unsafeRenderer.Render();
+                unsafeRenderer.Render();
             }
             
             return Result.Rendered;
-        }
-        
-        private void InitializeTraceBuffer() {
-            int viewportArea = (Viewport.SizeX + 1) * (Viewport.SizeY + 1);
-            int traceBufferSize = (traceBuffer != null ? traceBuffer.Length : 0);
-            
-            if (viewportArea <= traceBufferSize) return;
-            
-            if (traceBufferSize == 0) traceBufferSize = 1;
-            
-            while (traceBufferSize < viewportArea) traceBufferSize *= 2;
-            
-            traceBuffer = new int[traceBufferSize];
         }
         
         private int CalculateMaxLevel() {
@@ -461,8 +434,6 @@ namespace OctreeSplatting {
             public OctantOrder.Queue* ForwardQueues;
             public OctantOrder.Queue* ReverseQueues;
             
-            public int* TraceBuffer;
-            
             public byte* MapX;
             public byte* MapY;
             public int MapShift;
@@ -484,12 +455,10 @@ namespace OctreeSplatting {
             public Color24 BoundsColor;
             public bool ShowBounds;
             
-            public int Render() {
+            public void Render() {
                 int mapHalf = (MapSize << MapShift) >> 1;
                 
                 var stackTop = NodeStack;
-                
-                int* traceFront = TraceBuffer;
                 
                 fullQueue = ForwardQueues[255].Octants;
                 mask8Bit0 = 0;
@@ -508,7 +477,7 @@ namespace OctreeSplatting {
                 if (ShowBounds) {
                     stackTop[1] = stackTop[0];
                     stencil = 0;
-                    RenderCube(stackTop + 1, ref traceFront, BoundsColor, CubeOctree.WireCube);
+                    RenderCube(stackTop + 1, BoundsColor, CubeOctree.WireCube);
                 }
                 
                 stencil = int.MinValue;
@@ -526,7 +495,6 @@ namespace OctreeSplatting {
                             if ((node.Mask == 0) | (MapThreshold > 1)) {
                                 Pixels[i].Depth = current.Z | stencil;
                                 Pixels[i].Color.RGB = node.Data;
-                                *(traceFront++) = i;
                             } else {
                                 int mx = ((current.MinX << SubpixelBits) + SubpixelHalf) - (current.X - (mapHalf >> current.Level));
                                 int my = ((current.MinY << SubpixelBits) + SubpixelHalf) - (current.Y - (mapHalf >> current.Level));
@@ -541,7 +509,6 @@ namespace OctreeSplatting {
                                     if (z < Pixels[i].Depth) {
                                         Pixels[i].Depth = z | stencil;
                                         Pixels[i].Color.RGB = Octree[node.Address + octant].Data;
-                                        *(traceFront++) = i;
                                     }
                                 }
                             }
@@ -549,14 +516,14 @@ namespace OctreeSplatting {
                     } else if ((node.Mask == 0) | (current.Level >= MaxLevel)) {
                         if (current.MaxSize > 1) {
                             if (Shape == SplatShape.Cube) {
-                                RenderCube(stackTop + 1, ref traceFront, node.Data);
+                                RenderCube(stackTop + 1, node.Data);
                                 continue;
                             }
                             
                             current.Z += ExtentZ >> current.Level;
                             
                             if (Shape == SplatShape.Circle) {
-                                DrawCircle(ref current, ref traceFront, node.Data);
+                                DrawCircle(ref current, node.Data);
                                 continue;
                             }
                         } else {
@@ -585,7 +552,6 @@ namespace OctreeSplatting {
                                 if (current.Z < Pixels[i].Depth) {
                                     Pixels[i].Depth = current.Z | stencil;
                                     Pixels[i].Color.RGB = node.Data;
-                                    *(traceFront++) = i;
                                 }
                             }
                         }
@@ -612,7 +578,6 @@ namespace OctreeSplatting {
                                     if (z < Pixels[i].Depth) {
                                         Pixels[i].Depth = z | stencil;
                                         Pixels[i].Color.RGB = Octree[node.Address + octant].Data;
-                                        *(traceFront++) = i;
                                     }
                                 }
                             }
@@ -656,7 +621,6 @@ namespace OctreeSplatting {
                                         if (z < Pixels[i].Depth) {
                                             Pixels[i].Depth = z | stencil;
                                             Pixels[i].Color.RGB = Octree[node.Address + octant8].Data;
-                                            *(traceFront++) = i;
                                         }
                                     }
                                 }
@@ -724,16 +688,9 @@ namespace OctreeSplatting {
                         }
                     }
                 }
-                
-                // Clear stencil bits in the written pixels
-                for (var trace = TraceBuffer; trace != traceFront; trace++) {
-                    Pixels[*trace].Depth &= int.MaxValue;
-                }
-                
-                return (int)(traceFront - TraceBuffer);
             }
             
-            private void DrawCircle(ref StackItem current, ref int* traceFront, Color24 color) {
+            private void DrawCircle(ref StackItem current, Color24 color) {
                 // For circle, ExtentX and ExtentY are always equal
                 int radius = (ExtentX >> current.Level) + Dilation + SubpixelHalf;
                 
@@ -758,7 +715,6 @@ namespace OctreeSplatting {
                         if ((distance2 <= radius2) & (current.Z < Pixels[i].Depth)) {
                             Pixels[i].Depth = current.Z | stencil;
                             Pixels[i].Color.RGB = color;
-                            *(traceFront++) = i;
                         }
                         distance2 += (rowDX << stepShift) + stepAdd2;
                         rowDX += stepAdd;
@@ -768,7 +724,7 @@ namespace OctreeSplatting {
                 }
             }
             
-            private void RenderCube(StackItem* stackTop, ref int* traceFront, Color24 color, int address = -1) {
+            private void RenderCube(StackItem* stackTop, Color24 color, int address = -1) {
                 int mapHalf = (MapSize << MapShift) >> 1;
                 
                 // In the temporal upsampling mode, cube mode can sometimes be
@@ -792,7 +748,6 @@ namespace OctreeSplatting {
                         if (current.Z < Pixels[i].Depth) {
                             Pixels[i].Depth = current.Z | stencil;
                             Pixels[i].Color.RGB = color;
-                            *(traceFront++) = i;
                         }
                     } else if (current.MaxSize < mapThreshold) {
                         int mapStartX = ((current.MinX << SubpixelBits) + SubpixelHalf) - (current.X - (mapHalf >> current.Level));
@@ -817,7 +772,6 @@ namespace OctreeSplatting {
                                     if (z < Pixels[i].Depth) {
                                         Pixels[i].Depth = z | stencil;
                                         Pixels[i].Color.RGB = color;
-                                        *(traceFront++) = i;
                                     }
                                 }
                             }
