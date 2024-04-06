@@ -7,15 +7,16 @@ namespace OctreeSplatting {
         
         private int shiftX;
         private int sizeX, sizeY;
-        private PixelData[] dataPixels;
-        private Color32[] colorPixels;
+        private int[] depthData;
+        private Color32[] colorData;
         private Color32[] finalPixels;
         
         public int ShiftX => shiftX;
         public int SizeX => sizeX;
         public int SizeY => sizeY;
         public int SizeZ => 1 << DepthBits;
-        public PixelData[] DataPixels => dataPixels;
+        public int[] DepthData => depthData;
+        public Color32[] ColorData => colorData;
         public Color32[] ColorPixels => finalPixels;
         
         public int DataSizeX => UseTemporalUpscaling ? sizeX >> 1 : sizeX;
@@ -34,32 +35,32 @@ namespace OctreeSplatting {
             
             for (shiftX = 0; (1 << shiftX) < sizeX; shiftX++);
             
-            dataPixels = new PixelData[(1 << shiftX) * sizeY];
-            colorPixels = new Color32[sizeX * sizeY];
+            depthData = new int[(1 << shiftX) * sizeY];
+            colorData = new Color32[(1 << shiftX) * sizeY];
             finalPixels = new Color32[sizeX * sizeY];
         }
         
         public unsafe void Begin(Color32 background) {
-            if (dataPixels == null) return;
+            if (colorData == null) return;
             
-            var defaultValue = default(PixelData);
-            defaultValue.Depth = SizeZ;
-            defaultValue.Color = background;
+            var defaultDepth = SizeZ;
+            var defaultColor = background;
             
-            fixed (PixelData* dataPtr = dataPixels)
+            fixed (int* depthDataPtr = depthData)
+            fixed (Color32* colorDataPtr = colorData)
             {
                 for (int y = 0; y < sizeY; y++) {
                     int dataIndex = y << shiftX;
                     for (int x = 0; x < sizeX; x++, dataIndex++) {
-                        dataPtr[dataIndex] = defaultValue;
+                        depthDataPtr[dataIndex] = defaultDepth;
+                        colorDataPtr[dataIndex] = defaultColor;
                     }
                 }
             }
         }
         
         public unsafe void End() {
-            if (dataPixels == null) return;
-            if (colorPixels == null) return;
+            if (colorData == null) return;
             
             int step = UseTemporalUpscaling ? 2 : 1;
             GetSamplingOffset(out int startX, out int startY);
@@ -67,24 +68,16 @@ namespace OctreeSplatting {
             int subStepX = startX == 0 ? 1 : -1;
             int subStepY = startY == 0 ? sizeX : -sizeX;
             
-            fixed (PixelData* dataPtr = dataPixels)
-            fixed (Color32* colorPtr = colorPixels)
+            fixed (Color32* colorDataPtr = colorData)
             fixed (Color32* finalPtr = finalPixels)
             {
                 for (int y = startY, yData = 0; y < sizeY; y += step, yData++) {
                     int dataIndex = yData << shiftX;
                     int colorIndex = startX + (y * sizeX);
                     for (int x = startX; x < sizeX; x += step, colorIndex += step, dataIndex++) {
-                        var dataPixel = dataPtr + dataIndex;
-                        var colorPixel = colorPtr + colorIndex;
+                        var dataPixel = colorDataPtr + dataIndex;
                         var finalPixel = finalPtr + colorIndex;
-                        
-                        byte originalR = colorPixel->R;
-                        byte originalG = colorPixel->G;
-                        byte originalB = colorPixel->B;
-                        
-                        *colorPixel = dataPixel->Color;
-                        *finalPixel = *colorPixel;
+                        *finalPixel = *dataPixel;
                     }
                 }
             }

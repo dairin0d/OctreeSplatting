@@ -103,7 +103,8 @@ namespace OctreeSplatting {
         private int ZX, ZY, ZZ;
         private int TX, TY, TZ;
         
-        private UnsafeRef pixelsRef;
+        private UnsafeRef depthDataRef;
+        private UnsafeRef colorDataRef;
         private UnsafeRef octreeRef;
         private UnsafeRef queuesRef;
         private UnsafeRef cubeNodesRef;
@@ -116,13 +117,15 @@ namespace OctreeSplatting {
         }
         
         public void Begin() {
-            pixelsRef.Set(Renderbuffer.DataPixels);
+            depthDataRef.Set(Renderbuffer.DepthData);
+            colorDataRef.Set(Renderbuffer.ColorData);
             queuesRef.Set(OctantOrder.SparseQueues);
             cubeNodesRef.Set(CubeOctree.CubeNodes);
         }
         
         public void Finish() {
-            pixelsRef.Clear();
+            depthDataRef.Clear();
+            colorDataRef.Clear();
             octreeRef.Clear();
             queuesRef.Clear();
             cubeNodesRef.Clear();
@@ -138,7 +141,7 @@ namespace OctreeSplatting {
             
             if (z < 0) return false;
             
-            var pixelsPtr = (PixelData*)pixelsRef;
+            var depthDataPtr = (int*)depthDataRef;
             
             var bufferShift = Renderbuffer.ShiftX;
             int j = region.MinX + (region.MinY << bufferShift);
@@ -147,7 +150,7 @@ namespace OctreeSplatting {
             int jStep = 1 << bufferShift;
             for (; j <= jEnd; j += jStep, iEnd += jStep) {
                 for (int i = j; i <= iEnd; i++) {
-                    if (z < pixelsPtr[i].Depth) return false;
+                    if (z < depthDataPtr[i]) return false;
                 }
                 lastY++;
             }
@@ -196,7 +199,8 @@ namespace OctreeSplatting {
             
             octreeRef.Set(Octree);
             
-            var pixelsPtr = (PixelData*)pixelsRef;
+            var depthDataPtr = (int*)depthDataRef;
+            var colorDataPtr = (Color32*)colorDataRef;
             var octreePtr = (OctreeNode*)octreeRef;
             var queuesPtr = (OctantOrder.Queue*)queuesRef;
             var cubeNodesPtr = (uint*)cubeNodesRef;
@@ -204,7 +208,8 @@ namespace OctreeSplatting {
                 var unsafeRenderer = new OctreeRendererUnsafe {
                     Viewport = Viewport,
                     BufferShift = Renderbuffer.ShiftX,
-                    Pixels = pixelsPtr,
+                    DepthData = depthDataPtr,
+                    ColorData = colorDataPtr,
                     
                     Octree = octreePtr,
                     
@@ -420,7 +425,8 @@ namespace OctreeSplatting {
             
             public Range2D Viewport;
             public int BufferShift;
-            public PixelData* Pixels;
+            public int* DepthData;
+            public Color32* ColorData;
             
             public OctreeNode* Octree;
             
@@ -485,10 +491,10 @@ namespace OctreeSplatting {
                     
                     if (current.MaxSize < 1) {
                         int i = current.MinX + (current.MinY << BufferShift);
-                        if (current.Z < Pixels[i].Depth) {
+                        if (current.Z < DepthData[i]) {
                             if ((node.Mask == 0) | (MapThreshold > 1)) {
-                                Pixels[i].Depth = current.Z;
-                                Pixels[i].Color.RGB = node.Data;
+                                DepthData[i] = current.Z;
+                                ColorData[i].RGB = node.Data;
                             } else {
                                 int mx = ((current.MinX << SubpixelBits) + SubpixelHalf) - (current.X - (mapHalf >> current.Level));
                                 int my = ((current.MinY << SubpixelBits) + SubpixelHalf) - (current.Y - (mapHalf >> current.Level));
@@ -500,9 +506,9 @@ namespace OctreeSplatting {
                                     
                                     int z = current.Z + (Deltas[octant].Z >> current.Level);
                                     
-                                    if (z < Pixels[i].Depth) {
-                                        Pixels[i].Depth = z;
-                                        Pixels[i].Color.RGB = Octree[node.Address + octant].Data;
+                                    if (z < DepthData[i]) {
+                                        DepthData[i] = z;
+                                        ColorData[i].RGB = Octree[node.Address + octant].Data;
                                     }
                                 }
                             }
@@ -543,9 +549,9 @@ namespace OctreeSplatting {
                         int jStep = 1 << BufferShift;
                         for (; j <= jEnd; j += jStep, iEnd += jStep) {
                             for (int i = j; i <= iEnd; i++) {
-                                if (current.Z < Pixels[i].Depth) {
-                                    Pixels[i].Depth = current.Z;
-                                    Pixels[i].Color.RGB = node.Data;
+                                if (current.Z < DepthData[i]) {
+                                    DepthData[i] = current.Z;
+                                    ColorData[i].RGB = node.Data;
                                 }
                             }
                         }
@@ -564,14 +570,14 @@ namespace OctreeSplatting {
                             for (int mx = mapStartX, i = j; i <= iEnd; i++, mx += SubpixelSize) {
                                 int mask = MapX[mx >> mapShift] & maskY;
                                 
-                                if ((mask != 0) & (current.Z < Pixels[i].Depth)) {
+                                if ((mask != 0) & (current.Z < DepthData[i])) {
                                     var octant = unchecked((int)(ForwardQueues[mask].Octants & 7));
                                     
                                     int z = current.Z + (Deltas[octant].Z >> current.Level);
                                     
-                                    if (z < Pixels[i].Depth) {
-                                        Pixels[i].Depth = z;
-                                        Pixels[i].Color.RGB = Octree[node.Address + octant].Data;
+                                    if (z < DepthData[i]) {
+                                        DepthData[i] = z;
+                                        ColorData[i].RGB = Octree[node.Address + octant].Data;
                                     }
                                 }
                             }
@@ -599,7 +605,7 @@ namespace OctreeSplatting {
                                 for (int mx = mapStartX, i = j; i <= iEnd; i++, mx += SubpixelSize) {
                                     ulong mask = MapX8[mx >> mapShift] & maskY;
                                     
-                                    if ((mask != 0) & (current.Z < Pixels[i].Depth)) {
+                                    if ((mask != 0) & (current.Z < DepthData[i])) {
                                         octant8Bit2.BoolValue = (mask & mask8Bit2) == 0;
                                         mask &= mask8Bit2 ^ unchecked((ulong)(-octant8Bit2.ByteValue));
                                         octant8Bit1.BoolValue = (mask & mask8Bit1) == 0;
@@ -612,9 +618,9 @@ namespace OctreeSplatting {
                                         
                                         int z = current.Z + (Deltas[octant8].Z >> current.Level);
                                         
-                                        if (z < Pixels[i].Depth) {
-                                            Pixels[i].Depth = z;
-                                            Pixels[i].Color.RGB = Octree[node.Address + octant8].Data;
+                                        if (z < DepthData[i]) {
+                                            DepthData[i] = z;
+                                            ColorData[i].RGB = Octree[node.Address + octant8].Data;
                                         }
                                     }
                                 }
@@ -630,7 +636,7 @@ namespace OctreeSplatting {
                             int jStep = 1 << BufferShift;
                             for (; j <= jEnd; j += jStep, iEnd += jStep) {
                                 for (int i = j; i <= iEnd; i++) {
-                                    if (current.Z < Pixels[i].Depth) goto OcclusionTestPassed;
+                                    if (current.Z < DepthData[i]) goto OcclusionTestPassed;
                                 }
                                 current.MinY++;
                             }
@@ -706,9 +712,9 @@ namespace OctreeSplatting {
                 for (; j <= jEnd; j += jStep, iEnd += jStep) {
                     int distance2 = distance2Y, rowDX = startDX;
                     for (int i = j; i <= iEnd; i++) {
-                        if ((distance2 <= radius2) & (current.Z < Pixels[i].Depth)) {
-                            Pixels[i].Depth = current.Z;
-                            Pixels[i].Color.RGB = color;
+                        if ((distance2 <= radius2) & (current.Z < DepthData[i])) {
+                            DepthData[i] = current.Z;
+                            ColorData[i].RGB = color;
                         }
                         distance2 += (rowDX << stepShift) + stepAdd2;
                         rowDX += stepAdd;
@@ -739,9 +745,9 @@ namespace OctreeSplatting {
                     
                     if (current.MaxSize < 1) {
                         int i = current.MinX + (current.MinY << BufferShift);
-                        if (current.Z < Pixels[i].Depth) {
-                            Pixels[i].Depth = current.Z;
-                            Pixels[i].Color.RGB = color;
+                        if (current.Z < DepthData[i]) {
+                            DepthData[i] = current.Z;
+                            ColorData[i].RGB = color;
                         }
                     } else if (current.MaxSize < mapThreshold) {
                         int mapStartX = ((current.MinX << SubpixelBits) + SubpixelHalf) - (current.X - (mapHalf >> current.Level));
@@ -758,14 +764,14 @@ namespace OctreeSplatting {
                             for (int mx = mapStartX, i = j; i <= iEnd; i++, mx += SubpixelSize) {
                                 int mask = MapX[mx >> mapShift] & maskY;
                                 
-                                if ((mask != 0) & (current.Z < Pixels[i].Depth)) {
+                                if ((mask != 0) & (current.Z < DepthData[i])) {
                                     var octant = unchecked((int)(ForwardQueues[mask].Octants & 7));
                                     
                                     int z = current.Z + (Deltas[octant].Z >> current.Level);
                                     
-                                    if (z < Pixels[i].Depth) {
-                                        Pixels[i].Depth = z;
-                                        Pixels[i].Color.RGB = color;
+                                    if (z < DepthData[i]) {
+                                        DepthData[i] = z;
+                                        ColorData[i].RGB = color;
                                     }
                                 }
                             }
@@ -777,7 +783,7 @@ namespace OctreeSplatting {
                         int jStep = 1 << BufferShift;
                         for (; j <= jEnd; j += jStep, iEnd += jStep) {
                             for (int i = j; i <= iEnd; i++) {
-                                if (current.Z < Pixels[i].Depth) goto OcclusionTestPassed;
+                                if (current.Z < DepthData[i]) goto OcclusionTestPassed;
                             }
                             current.MinY++;
                         }
