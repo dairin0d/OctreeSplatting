@@ -24,7 +24,6 @@ namespace OctreeSplatting {
         public int FrameCount;
         
         public bool UseTemporalUpscaling;
-        public bool UseTemporalBlending;
         
         public void Resize(int width, int height) {
             if ((width <= 0) | (height <= 0)) return;
@@ -86,30 +85,6 @@ namespace OctreeSplatting {
                         
                         *colorPixel = dataPixel->Color32;
                         *finalPixel = *colorPixel;
-                        
-                        if (UseTemporalUpscaling & UseTemporalBlending) {
-                            int deltaR = colorPixel->R - originalR;
-                            if (deltaR < 0) deltaR = -deltaR;
-                            int deltaG = colorPixel->G - originalG;
-                            if (deltaG < 0) deltaG = -deltaG;
-                            int deltaB = colorPixel->B - originalB;
-                            if (deltaB < 0) deltaB = -deltaB;
-                            int deltaSum = deltaR + deltaG + deltaB;
-                            int weight = (deltaSum <= 255 ? deltaSum : 255) >> 1;
-                            int inverse = 255 - weight;
-                            
-                            for (int subY = 0; subY >= -1; subY--) {
-                                for (int subX = 0; subX >= -1; subX--) {
-                                    if ((subX | subY) == 0) continue;
-                                    int subOffset = (subStepX & subX) + (subStepY & subY);
-                                    var colorPixel2 = colorPixel + subOffset;
-                                    var finalPixel2 = finalPixel + subOffset;
-                                    finalPixel2->R = (byte)((colorPixel2->R * inverse + colorPixel->R * weight + 255) >> 8);
-                                    finalPixel2->G = (byte)((colorPixel2->G * inverse + colorPixel->G * weight + 255) >> 8);
-                                    finalPixel2->B = (byte)((colorPixel2->B * inverse + colorPixel->B * weight + 255) >> 8);
-                                }
-                            }
-                        }
                     }
                 }
             }
