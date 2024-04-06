@@ -30,35 +30,6 @@ namespace OctreeSplatting {
             public int Level;
         }
         
-        private struct UnsafeRef {
-            public Object Source;
-            public GCHandle Handle;
-            public IntPtr Pointer;
-            
-            public static unsafe implicit operator void*(UnsafeRef r) => r.Pointer.ToPointer();
-            
-            public void Set(object source) {
-                if (Source == source) return;
-                Clear();
-                if (source == null) return;
-                Source = source;
-                Handle = GCHandle.Alloc(source, GCHandleType.Pinned);
-                Pointer = Handle.AddrOfPinnedObject();
-            }
-            
-            public void Set(IntPtr pointer) {
-                Clear();
-                Pointer = pointer;
-            }
-            
-            public void Clear() {
-                if (Handle.IsAllocated) Handle.Free();
-                Source = null;
-                Handle = default;
-                Pointer = default;
-            }
-        }
-        
         private const int SubpixelBits = 16;
         private const int SubpixelSize = 1 << SubpixelBits;
         private const int SubpixelHalf = SubpixelSize >> 1;
