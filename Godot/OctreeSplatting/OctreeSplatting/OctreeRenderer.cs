@@ -106,18 +106,32 @@ namespace OctreeSplatting {
             
             if (z < 0) return false;
             
-            var buffers = Renderbuffer.GetBuffers();
-            
-            int j = region.MinX + (region.MinY << buffers.Shift);
-            int jEnd = region.MinX + (region.MaxY << buffers.Shift);
-            int iEnd = region.MaxX + (region.MinY << buffers.Shift);
-            int jStep = 1 << buffers.Shift;
-            for (; j <= jEnd; j += jStep, iEnd += jStep) {
-                for (int i = j; i <= iEnd; i++) {
-                    if (z < buffers.Depth[i]) return false;
+            var tiles = Renderbuffer.ToTiles(region);
+            for (var ty = tiles.MinY; ty <= tiles.MaxY; ty++) {
+                for (var tx = tiles.MinX; tx <= tiles.MaxX; tx++) {
+                    var buffers = Renderbuffer.GetBuffers(tx, ty);
+                    var xMin = region.MinX - buffers.MinX;
+                    var xMax = region.MaxX - buffers.MinX;
+                    var yMin = region.MinY - buffers.MinY;
+                    var yMax = region.MaxY - buffers.MinY;
+                    if (xMin < 0) xMin = 0;
+                    if (yMin < 0) yMin = 0;
+                    if (xMax >= buffers.SizeX) xMax = buffers.SizeX - 1;
+                    if (yMax >= buffers.SizeY) yMax = buffers.SizeY - 1;
+                    
+                    int j = xMin + (yMin << buffers.Shift);
+                    int jEnd = xMin + (yMax << buffers.Shift);
+                    int iEnd = xMax + (yMin << buffers.Shift);
+                    int jStep = 1 << buffers.Shift;
+                    for (; j <= jEnd; j += jStep, iEnd += jStep) {
+                        for (int i = j; i <= iEnd; i++) {
+                            if (z < buffers.Depth[i]) return false;
+                        }
+                        // lastY++;
+                    }
                 }
-                lastY++;
             }
+            
             return true;
         }
         
@@ -163,16 +177,15 @@ namespace OctreeSplatting {
             
             octreeRef.Set(Octree);
             
-            var buffers = Renderbuffer.GetBuffers();
             var octreePtr = (OctreeNode*)octreeRef;
             var queuesPtr = (OctantOrder.Queue*)queuesRef;
             var cubeNodesPtr = (uint*)cubeNodesRef;
             {
                 var unsafeRenderer = new OctreeRendererUnsafe {
                     Viewport = Viewport,
-                    BufferShift = buffers.Shift,
-                    DepthData = buffers.Depth,
-                    ColorData = buffers.Color,
+                    // BufferShift = buffers.Shift,
+                    // DepthData = buffers.Depth,
+                    // ColorData = buffers.Color,
                     
                     Octree = octreePtr,
                     
@@ -207,7 +220,41 @@ namespace OctreeSplatting {
                     ShowBounds = ShowBounds,
                 };
                 
-                unsafeRenderer.Render();
+                var region = new Range2D {
+                    MinX = rootInfo.MinX,
+                    MinY = rootInfo.MinY,
+                    MaxX = rootInfo.MaxX,
+                    MaxY = rootInfo.MaxY,
+                };
+                var tiles = Renderbuffer.ToTiles(region);
+                for (var ty = tiles.MinY; ty <= tiles.MaxY; ty++) {
+                    for (var tx = tiles.MinX; tx <= tiles.MaxX; tx++) {
+                        var buffers = Renderbuffer.GetBuffers(tx, ty);
+                        
+                        unsafeRenderer.BufferShift = buffers.Shift;
+                        unsafeRenderer.DepthData = buffers.Depth;
+                        unsafeRenderer.ColorData = buffers.Color;
+                        
+                        var xMin = region.MinX - buffers.MinX;
+                        var xMax = region.MaxX - buffers.MinX;
+                        var yMin = region.MinY - buffers.MinY;
+                        var yMax = region.MaxY - buffers.MinY;
+                        if (xMin < 0) xMin = 0;
+                        if (yMin < 0) yMin = 0;
+                        if (xMax >= buffers.SizeX) xMax = buffers.SizeX - 1;
+                        if (yMax >= buffers.SizeY) yMax = buffers.SizeY - 1;
+                        
+                        nodeStackPtr[0] = rootInfo;
+                        nodeStackPtr[0].MinX = xMin;
+                        nodeStackPtr[0].MinY = yMin;
+                        nodeStackPtr[0].MaxX = xMax;
+                        nodeStackPtr[0].MaxY = yMax;
+                        nodeStackPtr[0].X = rootInfo.X - (buffers.MinX << SubpixelBits);
+                        nodeStackPtr[0].Y = rootInfo.Y - (buffers.MinY << SubpixelBits);
+                        
+                        unsafeRenderer.Render();
+                    }
+                }
             }
             
             return Result.Rendered;
