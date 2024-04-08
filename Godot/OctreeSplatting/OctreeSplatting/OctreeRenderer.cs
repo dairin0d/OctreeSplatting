@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: 2021 dairin0d https://github.com/dairin0d
 
+#define USE_STENCIL
+
 using System;
 using System.Numerics;
 using System.Runtime.InteropServices;
@@ -28,6 +30,16 @@ namespace OctreeSplatting {
             public int X, Y, Z;
             public uint Address;
             public int Level;
+        }
+        
+        private unsafe struct StackItemFwd {
+            // Dynamic data:
+            public uint Queue;
+            public int X, Y, Z;
+            public uint Address;
+            // Precalculated data:
+            public int ExtentX, ExtentY;
+            public Delta* Deltas;
         }
         
         private const int SubpixelBits = 16;
@@ -155,15 +167,11 @@ namespace OctreeSplatting {
             if (rootInfo.Z < 0) return Result.TooClose;
             if ((rootInfo.MaxX < rootInfo.MinX) | (rootInfo.MaxY < rootInfo.MinY)) return Result.Culled;
             
-            var queues = OctantOrder.SparseQueues;
             int forwardKey = OctantOrder.Key(in Matrix);
             int reverseKey = forwardKey ^ 0b11100000000;
             
-            StackItem* nodeStackPtr = stackalloc StackItem[MaxSubdivisions * 8];
-            
-            nodeStackPtr[0] = rootInfo;
-            
-            Delta* deltasPtr = stackalloc Delta[8];
+            // Delta* deltasPtr = stackalloc Delta[8];
+            Delta* deltasPtr = stackalloc Delta[MaxSubdivisions * 8];
             CalculateDeltas(deltasPtr);
             
             int mapThreshold8 = (MapThreshold * 3) / 2;
@@ -175,17 +183,23 @@ namespace OctreeSplatting {
             ulong* mapY8 = stackalloc ulong[MapSize];
             int mapShift = CalculateMaps(deltasPtr, mapX, mapY, mapX8, mapY8, useMap8);
             
+            dilation -= SubpixelHalf;
+            
             octreeRef.Set(Octree);
             
             var octreePtr = (OctreeNode*)octreeRef;
             var queuesPtr = (OctantOrder.Queue*)queuesRef;
-            var cubeNodesPtr = (uint*)cubeNodesRef;
-            {
+            
+            const bool useStencilFwd = false;
+            
+            if (!useStencilFwd) {
+                StackItem* nodeStackPtr = stackalloc StackItem[MaxSubdivisions * 8];
+                nodeStackPtr[0] = rootInfo;
+                
+                var cubeNodesPtr = (uint*)cubeNodesRef;
+                
                 var unsafeRenderer = new OctreeRendererUnsafe {
                     Viewport = Viewport,
-                    // BufferShift = buffers.Shift,
-                    // DepthData = buffers.Depth,
-                    // ColorData = buffers.Color,
                     
                     Octree = octreePtr,
                     
@@ -210,7 +224,7 @@ namespace OctreeSplatting {
                     
                     MaxLevel = Math.Min(MaxLevel >= 0 ? MaxLevel : int.MaxValue, maxLevel+1),
                     
-                    Dilation = dilation - SubpixelHalf,
+                    Dilation = dilation,
                     
                     Shape = Shape,
                     
@@ -234,6 +248,7 @@ namespace OctreeSplatting {
                         unsafeRenderer.BufferShift = buffers.Shift;
                         unsafeRenderer.DepthData = buffers.Depth;
                         unsafeRenderer.ColorData = buffers.Color;
+                        unsafeRenderer.StencilData = buffers.Stencil;
                         
                         var xMin = region.MinX - buffers.MinX;
                         var xMax = region.MaxX - buffers.MinX;
@@ -252,12 +267,126 @@ namespace OctreeSplatting {
                         nodeStackPtr[0].X = rootInfo.X - (buffers.MinX << SubpixelBits);
                         nodeStackPtr[0].Y = rootInfo.Y - (buffers.MinY << SubpixelBits);
                         
-                        unsafeRenderer.Render();
+                        // unsafeRenderer.Render();
+                        unsafeRenderer.RenderSimple();
+                        
+                        buffers.ClearStencil();
+                    }
+                }
+            }
+            
+            if (useStencilFwd) {
+                var forwardQueues = queuesPtr + forwardKey;
+                
+                StackItemFwd* stack = stackalloc StackItemFwd[MaxSubdivisions];
+                stack[0].ExtentX = extentX + dilation;
+                stack[0].ExtentY = extentY + dilation;
+                stack[0].Deltas = deltasPtr;
+                
+                var deltaPrev = deltasPtr;
+                var deltaNext = deltaPrev + 8;
+                for (var i = 1; i < MaxSubdivisions; i++) {
+                    for (var octant = 0; octant < 8; octant++) {
+                        deltaNext->X = deltaPrev->X >> 1;
+                        deltaNext->Y = deltaPrev->Y >> 1;
+                        deltaNext->Z = deltaPrev->Z >> 1;
+                        deltaPrev++;
+                        deltaNext++;
+                    }
+                    stack[i].ExtentX = (extentX >> i) + dilation;
+                    stack[i].ExtentY = (extentY >> i) + dilation;
+                    stack[i].Deltas = deltasPtr + i * 8;
+                    if (stack[i].ExtentX < 0) stack[i].ExtentX = 0;
+                    if (stack[i].ExtentY < 0) stack[i].ExtentY = 0;
+                }
+                
+                var region = new Range2D {
+                    MinX = rootInfo.MinX,
+                    MinY = rootInfo.MinY,
+                    MaxX = rootInfo.MaxX,
+                    MaxY = rootInfo.MaxY,
+                };
+                var tiles = Renderbuffer.ToTiles(region);
+                for (var ty = tiles.MinY; ty <= tiles.MaxY; ty++) {
+                    for (var tx = tiles.MinX; tx <= tiles.MaxX; tx++) {
+                        var buffers = Renderbuffer.GetBuffers(tx, ty);
+                        stack[0].Queue = forwardQueues[octreePtr[0].Mask].Octants;
+                        stack[0].X = rootInfo.X - (buffers.MinX << SubpixelBits);
+                        stack[0].Y = rootInfo.Y - (buffers.MinY << SubpixelBits);
+                        stack[0].Z = rootInfo.Z;
+                        stack[0].Address = octreePtr[0].Address;
+                        RenderStencilFwd(stack, octreePtr, forwardQueues, buffers.Stencil, buffers.Color);
+                        buffers.ClearStencil();
                     }
                 }
             }
             
             return Result.Rendered;
+        }
+        
+        private unsafe void RenderStencilFwd(StackItemFwd* stack,
+                                OctreeNode* octree,
+                                OctantOrder.Queue* forwardQueues,
+                                uint* stencilBuffer,
+                                Color32* renderBuffer)
+        {
+            var stackStart = stack;
+            
+            LoopStart:;
+            
+            while (stack[0].Queue == 0) {
+                if (stack-- == stackStart) return;
+            }
+            
+            uint octant = stack[0].Queue & 7;
+            stack[0].Queue >>= 4;
+            
+            var octantDeltas = stack[0].Deltas + octant;
+            stack[1].X = stack[0].X + octantDeltas[0].X;
+            stack[1].Y = stack[0].Y + octantDeltas[0].Y;
+            stack[1].Z = stack[0].Z + octantDeltas[0].Z;
+            
+            int minX = (stack[1].X - stack[0].ExtentX) >> SubpixelBits;
+            int maxX = (stack[1].X + stack[0].ExtentX) >> SubpixelBits;
+            int sizeX = maxX - minX;
+            
+            if (minX < 0) minX = 0;
+            if (maxX > 31) maxX = 31;
+            if (maxX < minX) goto LoopStart;
+            
+            // Note: this works only if minX <= maxX, and they are in range [0..31]
+            // When minX == maxX, the mask will contain 1 bit
+            uint rowMask = (uint.MaxValue >> (31 - maxX + minX)) << minX;
+            
+            int minY = (stack[1].Y - stack[0].ExtentY) >> SubpixelBits;
+            int maxY = (stack[1].Y + stack[0].ExtentY) >> SubpixelBits;
+            int sizeY = maxY - minY;
+            
+            if (minY < 0) minY = 0;
+            if (maxY > 31) maxY = 31;
+            if (maxY < minY) goto LoopStart;
+            
+            // Note: if we define 0 as occluded and 1 as not occluded,
+            // we can compare to 0, which can use test/jne instructions
+            // Assuming we always have minY <= maxY:
+            do {
+                if ((stencilBuffer[minY] & rowMask) != 0) goto OcclusionTestPassed;
+            } while (++minY <= maxY);
+            goto LoopStart;
+            OcclusionTestPassed:;
+            
+            // if ((sizeX <= 0) & (sizeY <= 0)) {
+            if ((sizeX|sizeY) == 0) {
+                stencilBuffer[minY] &= ~rowMask;
+                renderBuffer[minX | (minY << 5)].RGB = octree[stack[0].Address + octant].Data;
+                goto LoopStart;
+            }
+            
+            var address = stack[0].Address + octant;
+            stack[1].Address = octree[address].Address;
+            stack[1].Queue = forwardQueues[octree[address].Mask].Octants;
+            ++stack;
+            goto LoopStart;
         }
         
         private int CalculateMaxLevel() {
@@ -437,6 +566,7 @@ namespace OctreeSplatting {
             public int BufferShift;
             public int* DepthData;
             public Color32* ColorData;
+            public uint* StencilData;
             
             public OctreeNode* Octree;
             
@@ -467,6 +597,198 @@ namespace OctreeSplatting {
             
             public Color24 BoundsColor;
             public bool ShowBounds;
+            
+            public void RenderSimple() {
+                int mapHalf = (MapSize << MapShift) >> 1;
+                
+                var stackTop = NodeStack;
+                
+                while (stackTop >= NodeStack) {
+                    // We need a copy anyway for subnode processing
+                    var current = *stackTop;
+                    --stackTop;
+                    
+                    ref var node = ref Octree[current.Address];
+                    
+                    if (current.MaxSize < 1) {
+                        #if USE_STENCIL
+                        uint pixelMask = unchecked((uint)(1 << current.MinX));
+                        if ((StencilData[current.MinY] & pixelMask) != 0) {
+                            StencilData[current.MinY] &= ~pixelMask;
+                            int i = current.MinX + (current.MinY << BufferShift);
+                            if (current.Z < DepthData[i]) {
+                                DepthData[i] = current.Z;
+                                ColorData[i].RGB = node.Data;
+                            }
+                        }
+                        #else
+                        int i = current.MinX + (current.MinY << BufferShift);
+                        if (current.Z < DepthData[i]) {
+                            DepthData[i] = current.Z;
+                            ColorData[i].RGB = node.Data;
+                        }
+                        #endif
+                    } else if ((node.Mask == 0) | (current.Level >= MaxLevel)) {
+                        current.Z += ExtentZ >> current.Level;
+                        
+                        #if USE_STENCIL
+                        uint rowMask = (uint.MaxValue >> (31 - current.MaxX + current.MinX)) << current.MinX;
+                        
+                        for (int y = current.MinY; y <= current.MaxY; y++) {
+                            if ((StencilData[y] & rowMask) == 0) continue;
+                            
+                            for (int x = current.MinX; x <= current.MaxX; x++) {
+                                uint pixelMask = unchecked((uint)(1 << x));
+                                if ((StencilData[y] & pixelMask) != 0) {
+                                    StencilData[y] &= ~pixelMask;
+                                    int i = x + (y << BufferShift);
+                                    if (current.Z < DepthData[i]) {
+                                        DepthData[i] = current.Z;
+                                        ColorData[i].RGB = node.Data;
+                                    }
+                                }
+                            }
+                        }
+                        #else
+                        int j = current.MinX + (current.MinY << BufferShift);
+                        int jEnd = current.MinX + (current.MaxY << BufferShift);
+                        int iEnd = current.MaxX + (current.MinY << BufferShift);
+                        int jStep = 1 << BufferShift;
+                        for (; j <= jEnd; j += jStep, iEnd += jStep) {
+                            for (int i = j; i <= iEnd; i++) {
+                                if (current.Z < DepthData[i]) {
+                                    DepthData[i] = current.Z;
+                                    ColorData[i].RGB = node.Data;
+                                }
+                            }
+                        }
+                        #endif
+                    } else if (current.MaxSize < MapThreshold) {
+                        int mapStartX = ((current.MinX << SubpixelBits) + SubpixelHalf) - (current.X - (mapHalf >> current.Level));
+                        int mapStartY = ((current.MinY << SubpixelBits) + SubpixelHalf) - (current.Y - (mapHalf >> current.Level));
+                        int mapShift = MapShift - current.Level;
+                        
+                        #if USE_STENCIL
+                        uint rowMask = (uint.MaxValue >> (31 - current.MaxX + current.MinX)) << current.MinX;
+                        
+                        for (int my = mapStartY, y = current.MinY; y <= current.MaxY; y++, my += SubpixelSize) {
+                            if ((StencilData[y] & rowMask) == 0) continue;
+                            
+                            int maskY = MapY[my >> mapShift] & node.Mask;
+                            for (int mx = mapStartX, x = current.MinX; x <= current.MaxX; x++, mx += SubpixelSize) {
+                                int mask = MapX[mx >> mapShift] & maskY;
+                                
+                                uint pixelMask = unchecked((uint)(1 << x));
+                                if ((mask != 0) & ((StencilData[y] & pixelMask) != 0)) {
+                                    StencilData[y] &= ~pixelMask;
+                                    var octant = unchecked((int)(ForwardQueues[mask].Octants & 7));
+                                    int z = current.Z + (Deltas[octant].Z >> current.Level);
+                                    int i = x + (y << BufferShift);
+                                    if (z < DepthData[i]) {
+                                        DepthData[i] = z;
+                                        ColorData[i].RGB = Octree[node.Address + octant].Data;
+                                    }
+                                }
+                            }
+                        }
+                        #else
+                        int j = current.MinX + (current.MinY << BufferShift);
+                        int jEnd = current.MinX + (current.MaxY << BufferShift);
+                        int iEnd = current.MaxX + (current.MinY << BufferShift);
+                        int jStep = 1 << BufferShift;
+                        
+                        for (int my = mapStartY; j <= jEnd; j += jStep, iEnd += jStep, my += SubpixelSize) {
+                            int maskY = MapY[my >> mapShift] & node.Mask;
+                            for (int mx = mapStartX, i = j; i <= iEnd; i++, mx += SubpixelSize) {
+                                int mask = MapX[mx >> mapShift] & maskY;
+                                
+                                if ((mask != 0) & (current.Z < DepthData[i])) {
+                                    var octant = unchecked((int)(ForwardQueues[mask].Octants & 7));
+                                    
+                                    int z = current.Z + (Deltas[octant].Z >> current.Level);
+                                    
+                                    if (z < DepthData[i]) {
+                                        DepthData[i] = z;
+                                        ColorData[i].RGB = Octree[node.Address + octant].Data;
+                                    }
+                                }
+                            }
+                        }
+                        #endif
+                    } else {
+                        #if USE_STENCIL
+                        // Note: this works only if minX <= maxX, and they are in range [0..31]
+                        // When minX == maxX, the mask will contain 1 bit
+                        uint rowMask = (uint.MaxValue >> (31 - current.MaxX + current.MinX)) << current.MinX;
+                        
+                        // Note: if we define 0 as occluded and 1 as not occluded,
+                        // we can compare to 0, which can use test/jne instructions
+                        // Assuming we always have minY <= maxY:
+                        do {
+                            if ((StencilData[current.MinY] & rowMask) != 0) goto OcclusionTestPassed;
+                        } while (++current.MinY <= current.MaxY);
+                        continue;
+                        OcclusionTestPassed:;
+                        #else
+                        int j = current.MinX + (current.MinY << BufferShift);
+                        int jEnd = current.MinX + (current.MaxY << BufferShift);
+                        int iEnd = current.MaxX + (current.MinY << BufferShift);
+                        int jStep = 1 << BufferShift;
+                        for (; j <= jEnd; j += jStep, iEnd += jStep) {
+                            for (int i = j; i <= iEnd; i++) {
+                                if (current.Z < DepthData[i]) goto OcclusionTestPassed;
+                            }
+                            current.MinY++;
+                        }
+                        continue;
+                        OcclusionTestPassed:;
+                        #endif
+                        
+                        var queue = ReverseQueues[node.Mask].Octants;
+                        
+                        int nextLevel = current.Level + 1;
+                        int nodeExtentX = (ExtentX >> nextLevel) + Dilation;
+                        int nodeExtentY = (ExtentY >> nextLevel) + Dilation;
+                        
+                        for (; queue != 0; queue >>= 4) {
+                            uint octant = queue & 7;
+                            
+                            ref var delta = ref Deltas[octant];
+                            
+                            int x = current.X + (delta.X >> current.Level);
+                            int y = current.Y + (delta.Y >> current.Level);
+                            
+                            int minX = (x - nodeExtentX) >> SubpixelBits;
+                            int minY = (y - nodeExtentY) >> SubpixelBits;
+                            int maxX = (x + nodeExtentX) >> SubpixelBits;
+                            int maxY = (y + nodeExtentY) >> SubpixelBits;
+                            
+                            int width = maxX - minX;
+                            int height = maxY - minY;
+                            int maxSize = (width > height ? width : height);
+                            
+                            if (minX < current.MinX) minX = current.MinX;
+                            if (minY < current.MinY) minY = current.MinY;
+                            if (maxX > current.MaxX) maxX = current.MaxX;
+                            if (maxY > current.MaxY) maxY = current.MaxY;
+                            
+                            if ((maxX < minX) | (maxY < minY)) continue;
+                            
+                            ++stackTop;
+                            stackTop->MinX = minX;
+                            stackTop->MinY = minY;
+                            stackTop->MaxX = maxX;
+                            stackTop->MaxY = maxY;
+                            stackTop->MaxSize = maxSize;
+                            stackTop->X = x;
+                            stackTop->Y = y;
+                            stackTop->Z = current.Z + (delta.Z >> current.Level);
+                            stackTop->Address = node.Address + octant;
+                            stackTop->Level = nextLevel;
+                        }
+                    }
+                }
+            }
             
             public void Render() {
                 int mapHalf = (MapSize << MapShift) >> 1;

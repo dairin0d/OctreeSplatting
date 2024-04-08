@@ -12,16 +12,29 @@ namespace OctreeSplatting {
             public int MinY;
             public int* Depth;
             public Color32* Color;
+            public uint* Stencil;
+            
+            public void ClearStencil() {
+                for (var i = 0; i < SizeY; i++) {
+                    Stencil[i] = uint.MaxValue;
+                }
+            }
         }
+        
+        public const int TileShift = 5;
+        public const int TileSize = 1 << TileShift;
+        public const int TileArea = TileSize * TileSize;
         
         public const int DepthBits = 24;
         
+        private const int TileBytesSize = 4 * TileArea + 4 * TileArea + 4 * TileSize;
+        
+        private bool useBuffersPerTile;
+        
         private int sizeX, sizeY;
         private int tilesX, tilesY;
-        private int[] depthData;
-        private Color32[] colorData;
-        private UnsafeRef depthDataRef;
-        private UnsafeRef colorDataRef;
+        private byte[] data;
+        private UnsafeRef dataRef;
         private Color32[] finalPixels;
         
         public int SizeX => sizeX;
@@ -46,17 +59,15 @@ namespace OctreeSplatting {
             var tiles = ToTiles(new Range2D {MaxX = sizeX - 1, MaxY = sizeY - 1});
             tilesX = tiles.MaxX + 1;
             tilesY = tiles.MaxY + 1;
-            depthData = new int[32 * 32 * tilesX * tilesY];
-            colorData = new Color32[32 * 32 * tilesX * tilesY];
+            data = new byte[TileBytesSize * tilesX * tilesY];
             
             finalPixels = new Color32[sizeX * sizeY];
         }
         
         public unsafe void Begin(Color32 background) {
-            if (colorData == null) return;
+            if (data == null) return;
             
-            depthDataRef.Set(depthData);
-            colorDataRef.Set(colorData);
+            dataRef.Set(data);
             
             var tiles = ToTiles(new Range2D {MaxX = sizeX - 1, MaxY = sizeY - 1});
             for (var ty = tiles.MinY; ty <= tiles.MaxY; ty++) {
@@ -68,27 +79,41 @@ namespace OctreeSplatting {
                             buffers.Depth[dataIndex] = buffers.SizeZ;
                             buffers.Color[dataIndex] = background;
                         }
+                        buffers.Stencil[y] = uint.MaxValue;
                     }
                 }
             }
         }
         
         public unsafe Pointers GetBuffers(int tx, int ty) {
-            var pixelOffset = 32 * 32 * (tx + tilesX * ty);
-            return new Pointers {
-                Shift = 5,
-                SizeX = 32,
-                SizeY = 32,
+            var buffers = new Pointers {
+                Shift = TileShift,
+                SizeX = TileSize,
+                SizeY = TileSize,
                 SizeZ = 1 << DepthBits,
-                MinX = tx * 32,
-                MinY = ty * 32,
-                Depth = (int*)depthDataRef + pixelOffset,
-                Color = (Color32*)colorDataRef + pixelOffset,
+                MinX = tx * TileSize,
+                MinY = ty * TileSize,
             };
+            
+            var dataPtr = (byte*)dataRef;
+            if (useBuffersPerTile) {
+                dataPtr += TileBytesSize * (tx + tilesX * ty);
+                buffers.Depth = (int*)(dataPtr);
+                buffers.Color = (Color32*)(dataPtr + 4 * TileArea);
+                buffers.Stencil = (uint*)(dataPtr + 8 * TileArea);
+            } else {
+                var pixelOffset = TileArea * (tx + tilesX * ty);
+                var stencilOffset = TileSize * (tx + tilesX * ty);
+                buffers.Depth = (int*)(dataPtr) + pixelOffset;
+                buffers.Color = (Color32*)(dataPtr + 4 * TileArea * tilesX * tilesY) + pixelOffset;
+                buffers.Stencil = (uint*)(dataPtr + 8 * TileArea * tilesX * tilesY) + stencilOffset;
+            }
+            
+            return buffers;
         }
         
         public unsafe void End() {
-            if (colorData == null) return;
+            if (data == null) return;
             
             var step = UseTemporalUpscaling ? 2 : 1;
             GetSamplingOffset(out int startX, out int startY);
@@ -121,15 +146,14 @@ namespace OctreeSplatting {
             
             FrameCount++;
             
-            depthDataRef.Clear();
-            colorDataRef.Clear();
+            dataRef.Clear();
         }
         
         public Range2D ToTiles(Range2D range) {
-            range.MinX = ((range.MinX < 0) ? 0 : range.MinX) >> 5;
-            range.MinY = ((range.MinY < 0) ? 0 : range.MinY) >> 5;
-            range.MaxX = ((range.MaxX >= sizeX) ? sizeX - 1 : range.MaxX) >> 5;
-            range.MaxY = ((range.MaxY >= sizeY) ? sizeY - 1 : range.MaxY) >> 5;
+            range.MinX = ((range.MinX < 0) ? 0 : range.MinX) >> TileShift;
+            range.MinY = ((range.MinY < 0) ? 0 : range.MinY) >> TileShift;
+            range.MaxX = ((range.MaxX >= sizeX) ? sizeX - 1 : range.MaxX) >> TileShift;
+            range.MaxY = ((range.MaxY >= sizeY) ? sizeY - 1 : range.MaxY) >> TileShift;
             return range;
         }
         
