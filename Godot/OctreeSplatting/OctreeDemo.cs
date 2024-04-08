@@ -50,6 +50,8 @@ namespace OctreeSplatting.GodotDemo {
 		private void InitializeScene() {
 			var octree = LoadOctree($"../../Unity/OctreeSplatting/Assets/Resources/DemoOctree.bytes");
 			var characterOctree = LoadOctree($"../../Unity/OctreeSplatting/Assets/Resources/CharacterOctree.bytes");
+			// var octree = CubeOctree(0, 0, 255);
+			// var characterOctree = default(OctreeNode[]);
 
 			if (octree == null) {
 				GD.Print("ERROR: DemoOctree dataset not found!");
@@ -154,6 +156,20 @@ namespace OctreeSplatting.GodotDemo {
 			int IntKeyDown(string key) => Input.IsActionPressed(key) ? 1 : 0;
 			int IntKeyPressed(string key) => Input.IsActionJustPressed(key) ? 1 : 0;
 			int IntKeyReleased(string key) => Input.IsActionJustReleased(key) ? 1 : 0;
+		}
+
+		private OctreeSplatting.OctreeNode[] CubeOctree(byte r, byte g, byte b) {
+			var color = new Color24 {R = r, G = g, B = b};
+			return new OctreeNode[] {
+				new OctreeNode {Address = 0, Mask = 255, Data = color},
+				new OctreeNode {Address = 0, Mask = 255, Data = color},
+				new OctreeNode {Address = 0, Mask = 255, Data = color},
+				new OctreeNode {Address = 0, Mask = 255, Data = color},
+				new OctreeNode {Address = 0, Mask = 255, Data = color},
+				new OctreeNode {Address = 0, Mask = 255, Data = color},
+				new OctreeNode {Address = 0, Mask = 255, Data = color},
+				new OctreeNode {Address = 0, Mask = 255, Data = color},
+			};
 		}
 
 		private OctreeSplatting.OctreeNode[] LoadOctree(string path) {
