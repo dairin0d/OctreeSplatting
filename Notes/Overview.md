@@ -15,6 +15,11 @@
 * [Vs. Animation](#vs-animation)
 * [Afterword](#afterword)
 
+* [Extras:](#ps)
+  * [Comparing notes with PND3D, Atomontage and pabloreda's renderer](#comparing-notes-with-pnd3d-atomontage-and-pabloredas-renderer)
+  * [Other things I tried](#other-things-i-tried)
+  * [An epilogue from Euclideon](#an-epilogue-from-euclideon)
+
 ---
 
 ## Introduction
@@ -751,7 +756,7 @@ And yes, it ***is*** as awesome as it sounds:
 
 Whew! This was quite a ride (at least for me). With all our optimizations applied, we went from kinda-interactive to near-realtime, gaining 2x-3x speed boost compared to the initial implementation.
 
-It's the end of the road for the renderer itself, unfortunately, and (unless I missed some additional optimization tricks) it can't be further improved within the current C#/Unity constraints.
+It's the end of the road for the renderer itself, unfortunately, and (unless I missed some additional optimization tricks[*](#an-epilogue-from-euclideon)) it can't be further improved within the current C#/Unity constraints.
 
 However, it's still possible to squeeze some extra FPS out of our program ;-) But for that, we'll have to resort to...
 
@@ -997,7 +1002,7 @@ Near the end of 2018, Ken Silverman [released](http://advsys.net/ken/voxlap/pnd3
 
 Indisputably, PND3D is very fast (though it would be cool to make an apples-to-apples comparison with my renderer... but alas, not with my skills or free time). However, perhaps ironically, none of the tricks mentioned by Ken ended up useful in my case:
 
-1. Since I wanted to support deformations, predicting bounding rectangle vertices is impossible in the general case.
+1. Since I wanted to support deformations, predicting the bounding rectangle vertices is impossible in the general case.
 2. This would be genuinely useful for multithreading, but my focus here was on the single-threaded performance.
 3. A long time ago I tried something similar, but it didn't bring any improvement, or maybe even was slower.
 4. As I mentioned [earlier](#4-room-for-stencil), in my experiments the overhead of multi-pixel stencil testing only made things worse. Though I haven't looked at Ken's code... maybe he found a way to do it very efficiently?
@@ -1041,6 +1046,34 @@ Of course, for more than one pixel this results in a lot of repeated work (not t
 During my initial experiments, I didn't know about the breadth-first octree storage, so my renderer was quite slowed down by a large amount of cache misses. To try to mitigate that, back then I implemented a rather elaborate system that cached octree nodes in the order of their traversal, so on subsequent re-traversals the cache coherency was typically much better.
 
 However, while this solution improved the average performance in my test scenes, it was too impractical to be really useful: it required a lot of extra memory to store just one buffer with the traverse-order copies of nodes (and for each additional view / camera, the memory requirements would be correspondingly multiplied), and in the worst-case scenario (when no nodes from the previous frame can be reused) it would actually be slower than no caching at all. So when I switched to breadth-first storage, I was quite happy to sacrifice a bit of average-case performance for not having to deal with that memory-hungry maintenance nighmare :-)
+
+### **An epilogue from Euclideon**
+
+In September 2022 I noticed that OsiJr (an employee of Euclideon) has starred this project. This got me intrigued, and on the off chance he'd be willing to "compare notes" / say anything on these topics, I decided to write him an email. I asked him how close or different were my and Unlimited Detail's approaches, and why they didn't use cage-deformation animations in their demos; for the sake of accuracy (and also because he didn't indicate any objections to the idea), I believe it would be best if I share his response verbatim:
+
+> Your work was interesting and some of it is close to some of the tricks we do.
+>
+> NDA’s are of course a thing but the Unlimited Detail technology was released 12 years ago and there are lots of groups with technology that rivals ours in different ways (and many that outright beat it if the user is happy with the trade-offs). So, I can at least partially answer your questions.
+>
+>> 1. Is UD's orthographic renderer using the same set of algorithmic optimizations that I described in my notes? I'm basically curious if there are some tricks I've missed that don't require SIMD or low-level optimizations... and also curious if, for some reason, UD doesn't use some of the tricks that I do (or maybe uses something closer to Ken Silverman's approach in PND3D).
+>
+>The way UD works isn’t really the same as your base implementation but it’s similar enough that the optimizations you’ve mentioned have at least been considered at various points over the years. Certainly some of the optimizations from from Ken Silverman should have helped you more than your metrics indicated. If you look at our patent you might notice that we have a slightly different take that merges #2 and #4 that makes a big difference (and by itself won’t breach our patent!).
+>
+>> 2. In all the videos I've seen of the UD technology in action, I haven't encountered any true demonstration of deformations or skinned animation. The "point cloud" characters all seemed to have slightly jerky pre-defined motions characteristic of the flip-book animation approach (even though, at first glance, cage deformations should be relatively straightforward to implement). Why is that?
+>
+> This one is harder to answer. The super condensed version is that when we were doing Games & Entertainment content (we haven’t been in that field for many years) we did experiment with these technologies but ultimately there is already an excellent way to do these (on the graphics card!) and UD could then be heavily optimized for static environments. This is way more important in our niche industries with ultra high resolution sparse point cloud. The ‘jerky’ content we released was (for better or worse) an artistic decision rather than a technical one. UD is excellent at many things but unfortunately the expectations of games in 2022 are far outside what UD is capable of.
+>
+> You ask a really important question right at the start though-
+>
+>> Why would anyone bother with CPU rendering, nowadays?
+>
+> In 2022 we are still shipping a CPU renderer and that is actually one of our key selling points.
+
+In April 2024 I finally got around to give his advice a try, and did a small experiment with tiled stencil-based rendering (the relevant code can be found in the [feature/maskbuffers](https://github.com/dairin0d/OctreeSplatting/tree/feature/maskbuffers) branch, in the Godot/OctreeSplatting folder). This indeed improves performance to some extent, although it seems to heavily depend on the situation. For a single "recursive cube" octree I observed speedups around 80%, for a single "port town" octree the speedup was around 25%, and for the partially overlapping grid of "port town" models it was around 10%. (This might not be entirely indicative, since I was only testing this in Godot, and on a different computer/OS, but the general trend would likely hold for other environments too.)
+
+I think that my mistake in not attempting this originally was due to testing the "tiled rendering" and the "multi-pixel stencil checks" separately, and it didn't occur to me that they could have a kind of synergistic effect. This said, the observation that, for complex scenes, optimized occlusion tests only contribute a small portion of the performance cost, appears to stay true. Of course, I can never rule out that I still overlooked some additional ways to improve the algorithm... but, by this point, my imagination has probably completely run dry.
+
+Still, even if attempting OsiJr's advice didn't bring my toy renderer any remarkable improvements, I'm nevertheless glad I tried. If anything, it has brought this little tale perhaps the only thing it lacked: a sense of final closure :-)
 
 ---
 

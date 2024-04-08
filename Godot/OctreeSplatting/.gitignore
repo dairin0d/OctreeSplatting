@@ -12,4 +12,6 @@ export_presets.cfg
 .mono/
 data_*/
 
+.vscode/
+
 # End of https://www.toptal.com/developers/gitignore/api/godot
