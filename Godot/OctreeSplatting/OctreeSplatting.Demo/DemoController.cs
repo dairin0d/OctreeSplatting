@@ -404,7 +404,7 @@ namespace OctreeSplatting.Demo {
             public float DistortionRelativeDilation = 0;
             
             public void Render() {
-                renderer.Begin(Renderbuffer.DataPixels, Renderbuffer.ShiftX, Viewport);
+                renderer.Begin(Renderbuffer, Viewport);
                 
                 try {
                     RenderMain();
