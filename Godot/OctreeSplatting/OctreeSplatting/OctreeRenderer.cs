@@ -81,7 +81,6 @@ namespace OctreeSplatting {
         private UnsafeRef octreeRef;
         private UnsafeRef queuesRef;
         private UnsafeRef traceBufferRef;
-        private UnsafeRef cubeNodesRef;
         
         public void Begin(Renderbuffer renderbuffer, Range2D viewport) {
             Renderbuffer = renderbuffer;
@@ -95,14 +94,12 @@ namespace OctreeSplatting {
             
             queuesRef.Set(OctantOrder.SparseQueues);
             traceBufferRef.Set(traceBuffer);
-            cubeNodesRef.Set(CubeOctree.CubeNodes);
         }
         
         public void Finish() {
             octreeRef.Clear();
             queuesRef.Clear();
             traceBufferRef.Clear();
-            cubeNodesRef.Clear();
             Lookups.FreePointers();
         }
         
@@ -187,7 +184,6 @@ namespace OctreeSplatting {
             var octreePtr = (OctreeNode*)octreeRef;
             var queuesPtr = (OctantOrder.Queue*)queuesRef;
             var traceBufferPtr = (int*)traceBufferRef;
-            var cubeNodesPtr = (uint*)cubeNodesRef;
             {
                 var unsafeRenderer = new OctreeRendererUnsafe {
                     Viewport = Viewport,
@@ -224,8 +220,6 @@ namespace OctreeSplatting {
                     Dilation = dilation - SubpixelHalf,
                     
                     Shape = Shape,
-                    
-                    CubeNodes = cubeNodesPtr,
                     
                     BoundsColor = BoundsColor,
                     ShowBounds = ShowBounds,
@@ -458,8 +452,6 @@ namespace OctreeSplatting {
             
             public SplatShape Shape;
             
-            public uint* CubeNodes;
-            
             public Color24 BoundsColor;
             public bool ShowBounds;
             
@@ -483,13 +475,6 @@ namespace OctreeSplatting {
                 BoolByte octant8Bit0 = default;
                 BoolByte octant8Bit1 = default;
                 BoolByte octant8Bit2 = default;
-                
-                if (ShowBounds) {
-                    stackTop[1] = stackTop[0];
-                    stencil = 0;
-                    uint address = 0;
-                    RenderCube(stackTop + 1, ref traceFront, address, CubeOctree.WireCube);
-                }
                 
                 stencil = int.MinValue;
                 
@@ -580,17 +565,7 @@ namespace OctreeSplatting {
                         }
                     } else if ((node.Mask == 0) | (current.Level >= MaxLevel)) {
                         if (current.MaxSize > 1) {
-                            // if (Shape == SplatShape.Cube) {
-                            //     RenderCube(stackTop + 1, ref traceFront, current.Address);
-                            //     continue;
-                            // }
-                            
                             current.Z += ExtentZ >> current.Level;
-                            
-                            // if (Shape == SplatShape.Circle) {
-                            //     DrawCircle(ref current, ref traceFront, current.Address);
-                            //     continue;
-                            // }
                         } else {
                             current.Z += ExtentZ >> current.Level;
                         }
@@ -803,240 +778,6 @@ namespace OctreeSplatting {
                 
                 return (int)(traceFront - TraceBuffer);
             }
-            
-            private void DrawCircle(ref StackItem current, ref int* traceFront, uint address) {
-                // For circle, ExtentX and ExtentY are always equal
-                int radius = (ExtentX >> current.Level) + Dilation + SubpixelHalf;
-                
-                const int MagnitudeLimit = 23170; // (2 * 23170)^2 < 2^31
-                int circleShift = SubpixelBits;
-                for (; (radius > MagnitudeLimit) | ((1 << circleShift) > MagnitudeLimit); circleShift--, radius >>= 1);
-                
-                int radius2 = radius * radius;
-                
-                int startDX = (((current.MinX << SubpixelBits) + SubpixelHalf) - current.X) >> (SubpixelBits - circleShift);
-                int startDY = (((current.MinY << SubpixelBits) + SubpixelHalf) - current.Y) >> (SubpixelBits - circleShift);
-                int stepAdd = 1 << circleShift, stepShift = circleShift + 1, stepAdd2 = stepAdd * stepAdd;
-                int distance2Y = startDX * startDX + startDY * startDY;
-                
-                int j = current.MinX + (current.MinY << Buffers.Shift);
-                int jEnd = current.MinX + (current.MaxY << Buffers.Shift);
-                int iEnd = current.MaxX + (current.MinY << Buffers.Shift);
-                int jStep = 1 << Buffers.Shift;
-                for (; j <= jEnd; j += jStep, iEnd += jStep) {
-                    int distance2 = distance2Y, rowDX = startDX;
-                    for (int i = j; i <= iEnd; i++) {
-                        if ((distance2 <= radius2) & (current.Z < Buffers.Depth[i])) {
-                            Buffers.Depth[i] = current.Z | stencil;
-                            Buffers.Instance[i] = InstanceIndex;
-                            Buffers.Address[i] = address;
-                            *(traceFront++) = i;
-                        }
-                        distance2 += (rowDX << stepShift) + stepAdd2;
-                        rowDX += stepAdd;
-                    }
-                    distance2Y += (startDY << stepShift) + stepAdd2;
-                    startDY += stepAdd;
-                }
-            }
-            
-            private void RenderCube(StackItem* stackTop, ref int* traceFront, uint address, int cubeAddress = -1) {
-                int mapHalf = (MapSize << MapShift) >> 1;
-                
-                // In the temporal upsampling mode, cube mode can sometimes be
-                // noticeably slower than without upsampling. This is an attempt
-                // to mitigate that (at the cost of small visual artifacts).
-                int mapThreshold = (MapThreshold > 2 ? MapThreshold : 2);
-                
-                var stackBottom = stackTop;
-                
-                stackTop[0].Address = cubeAddress >= 0 ? (uint)cubeAddress : (ForwardQueues[255].Octants & 7) * CubeOctree.Step;
-                
-                while (stackTop >= stackBottom) {
-                    // We need a copy anyway for subnode processing
-                    var current = *stackTop;
-                    --stackTop;
-                    
-                    var nodeMask = (byte)CubeNodes[current.Address];
-                    
-                    if (current.MaxSize < 1) {
-                        int i = current.MinX + (current.MinY << Buffers.Shift);
-                        if (current.Z < Buffers.Depth[i]) {
-                            Buffers.Depth[i] = current.Z | stencil;
-                            Buffers.Instance[i] = InstanceIndex;
-                            Buffers.Address[i] = address;
-                            *(traceFront++) = i;
-                        }
-                    } else if (current.MaxSize < mapThreshold) {
-                        int mapStartX = ((current.MinX << SubpixelBits) + SubpixelHalf) - (current.X - (mapHalf >> current.Level));
-                        int mapStartY = ((current.MinY << SubpixelBits) + SubpixelHalf) - (current.Y - (mapHalf >> current.Level));
-                        int mapShift = MapShift - current.Level;
-                        
-                        int j = current.MinX + (current.MinY << Buffers.Shift);
-                        int jEnd = current.MinX + (current.MaxY << Buffers.Shift);
-                        int iEnd = current.MaxX + (current.MinY << Buffers.Shift);
-                        int jStep = 1 << Buffers.Shift;
-                        
-                        for (int my = mapStartY; j <= jEnd; j += jStep, iEnd += jStep, my += SubpixelSize) {
-                            int maskY = MapY[my >> mapShift] & nodeMask;
-                            for (int mx = mapStartX, i = j; i <= iEnd; i++, mx += SubpixelSize) {
-                                int mask = MapX[mx >> mapShift] & maskY;
-                                
-                                if ((mask != 0) & (current.Z < Buffers.Depth[i])) {
-                                    var octant = unchecked((int)(ForwardQueues[mask].Octants & 7));
-                                    
-                                    int z = current.Z + (Deltas[octant].Z >> current.Level);
-                                    
-                                    if (z < Buffers.Depth[i]) {
-                                        Buffers.Depth[i] = z | stencil;
-                                        Buffers.Instance[i] = InstanceIndex;
-                                        Buffers.Address[i] = address;
-                                        *(traceFront++) = i;
-                                    }
-                                }
-                            }
-                        }
-                    } else {
-                        int j = current.MinX + (current.MinY << Buffers.Shift);
-                        int jEnd = current.MinX + (current.MaxY << Buffers.Shift);
-                        int iEnd = current.MaxX + (current.MinY << Buffers.Shift);
-                        int jStep = 1 << Buffers.Shift;
-                        for (; j <= jEnd; j += jStep, iEnd += jStep) {
-                            for (int i = j; i <= iEnd; i++) {
-                                if (current.Z < Buffers.Depth[i]) goto OcclusionTestPassed;
-                            }
-                            current.MinY++;
-                        }
-                        continue;
-                        OcclusionTestPassed:;
-                        
-                        var queue = ReverseQueues[nodeMask].Octants;
-                        
-                        int nextLevel = current.Level + 1;
-                        int nodeExtentX = (ExtentX >> nextLevel);
-                        int nodeExtentY = (ExtentY >> nextLevel);
-                        
-                        for (; queue != 0; queue >>= 4) {
-                            uint octant = queue & 7;
-                            
-                            ref var delta = ref Deltas[octant];
-                            
-                            int x = current.X + (delta.X >> current.Level);
-                            int y = current.Y + (delta.Y >> current.Level);
-                            
-                            int minX = (x - nodeExtentX) >> SubpixelBits;
-                            int minY = (y - nodeExtentY) >> SubpixelBits;
-                            int maxX = (x + nodeExtentX) >> SubpixelBits;
-                            int maxY = (y + nodeExtentY) >> SubpixelBits;
-                            
-                            int width = maxX - minX;
-                            int height = maxY - minY;
-                            int maxSize = (width > height ? width : height);
-                            
-                            if (minX < current.MinX) minX = current.MinX;
-                            if (minY < current.MinY) minY = current.MinY;
-                            if (maxX > current.MaxX) maxX = current.MaxX;
-                            if (maxY > current.MaxY) maxY = current.MaxY;
-                            
-                            if ((maxX < minX) | (maxY < minY)) continue;
-                            
-                            ++stackTop;
-                            stackTop->MinX = minX;
-                            stackTop->MinY = minY;
-                            stackTop->MaxX = maxX;
-                            stackTop->MaxY = maxY;
-                            stackTop->MaxSize = maxSize;
-                            stackTop->X = x;
-                            stackTop->Y = y;
-                            stackTop->Z = current.Z + (delta.Z >> current.Level);
-                            stackTop->Address = CubeNodes[current.Address + 1 + octant];
-                            stackTop->Level = nextLevel;
-                        }
-                    }
-                }
-            }
-        }
-        
-        private static class CubeOctree {
-            private const int S = 9, __ = 0;
-            private const int C0 = 0*S, C1 = 1*S, C2 = 2*S, C3 = 3*S, C4 = 4*S, C5 = 5*S, C6 = 6*S, C7 = 7*S;
-            private const int X0 = 8*S, X1 = 9*S, X2 = 10*S, X3 = 11*S;
-            private const int Y0 = 12*S, Y1 = 13*S, Y2 = 14*S, Y3 = 15*S;
-            private const int Z0 = 16*S, Z1 = 17*S, Z2 = 18*S, Z3 = 19*S;
-            private const int XN = 20*S, XP = 21*S, YN = 22*S, YP = 23*S, ZN = 24*S, ZP = 25*S;
-            private const int X4 = 26*S, X5 = 27*S, X6 = 28*S, X7 = 29*S;
-            private const int Y4 = 30*S, Y5 = 31*S, Y6 = 32*S, Y7 = 33*S;
-            private const int Z4 = 34*S, Z5 = 35*S, Z6 = 36*S, Z7 = 37*S;
-            private const int W0 = 38*S, W1 = 39*S, W2 = 40*S, W3 = 41*S, W4 = 42*S, W5 = 43*S, W6 = 44*S, W7 = 45*S;
-            private const int WC = 46*S;
-            
-            public const int Step = S;
-            public const int WireCube = WC;
-            
-            public static uint[] CubeNodes = new uint[] {
-                // corners
-                0b01111111, C0, X0, Y0, ZN, Z0, YN, XN, __, // C0
-                0b10111111, X0, C1, ZN, Y3, YN, Z1, __, XP, // C1
-                0b11011111, Y0, ZN, C2, X1, XN, __, Z3, YP, // C2
-                0b11101111, ZN, Y3, X1, C3, __, XP, YP, Z2, // C3
-                0b11110111, Z0, YN, XN, __, C4, X3, Y1, ZP, // C4
-                0b11111011, YN, Z1, __, XP, X3, C5, ZP, Y2, // C5
-                0b11111101, XN, __, Z3, YP, Y1, ZP, C6, X2, // C6
-                0b11111110, __, XP, YP, Z2, ZP, Y2, X2, C7, // C7
-                
-                // X-angles
-                0b00111111, X0, X0, ZN, ZN, YN, YN, __, __, // X0
-                0b11001111, ZN, ZN, X1, X1, __, __, YP, YP, // X1
-                0b11111100, __, __, YP, YP, ZP, ZP, X2, X2, // X2
-                0b11110011, YN, YN, __, __, X3, X3, ZP, ZP, // X3
-                // Y-angles
-                0b01011111, Y0, ZN, Y0, ZN, XN, __, XN, __, // Y0
-                0b11110101, XN, __, XN, __, Y1, ZP, Y1, ZP, // Y1
-                0b11111010, __, XP, __, XP, ZP, Y2, ZP, Y2, // Y2
-                0b10101111, ZN, Y3, ZN, Y3, __, XP, __, XP, // Y3
-                // Z-angles
-                0b01110111, Z0, YN, XN, __, Z0, YN, XN, __, // Z0
-                0b10111011, YN, Z1, __, XP, YN, Z1, __, XP, // Z1
-                0b11101110, __, XP, YP, Z2, __, XP, YP, Z2, // Z2
-                0b11011101, XN, __, Z3, YP, XN, __, Z3, YP, // Z3
-                
-                // faces
-                0b01010101, XN, __, XN, __, XN, __, XN, __, // XN
-                0b10101010, __, XP, __, XP, __, XP, __, XP, // XP
-                0b00110011, YN, YN, __, __, YN, YN, __, __, // YN
-                0b11001100, __, __, YP, YP, __, __, YP, YP, // YP
-                0b00001111, ZN, ZN, ZN, ZN, __, __, __, __, // ZN
-                0b11110000, __, __, __, __, ZP, ZP, ZP, ZP, // ZP
-                
-                // X-edges
-                0b00000011, X4, X4, __, __, __, __, __, __, // X4
-                0b00001100, __, __, X5, X5, __, __, __, __, // X5
-                0b11000000, __, __, __, __, __, __, X6, X6, // X6
-                0b00110000, __, __, __, __, X7, X7, __, __, // X7
-                // Y-edges
-                0b00000101, Y4, __, Y4, __, __, __, __, __, // Y4
-                0b01010000, __, __, __, __, Y5, __, Y5, __, // Y5
-                0b10100000, __, __, __, __, __, Y6, __, Y6, // Y6
-                0b00001010, __, Y7, __, Y7, __, __, __, __, // Y7
-                // Z-edges
-                0b00010001, Z4, __, __, __, Z4, __, __, __, // Z4
-                0b00100010, __, Z5, __, __, __, Z5, __, __, // Z5
-                0b10001000, __, __, __, Z6, __, __, __, Z6, // Z6
-                0b01000100, __, __, Z7, __, __, __, Z7, __, // Z7
-                
-                // wireframe corners
-                0b00010111, W0, X4, Y4, __, Z4, __, __, __, // W0
-                0b00101011, X4, W1, __, Y7, __, Z5, __, __, // W1
-                0b01001101, Y4, __, W2, X5, __, __, Z7, __, // W2
-                0b10001110, __, Y7, X5, W3, __, __, __, Z6, // W3
-                0b01110001, Z4, __, __, __, W4, X7, Y5, __, // W4
-                0b10110010, __, Z5, __, __, X7, W5, __, Y6, // W5
-                0b11010100, __, __, Z7, __, Y5, __, W6, X6, // W6
-                0b11101000, __, __, __, Z6, __, Y6, X6, W7, // W7
-                
-                // wireframe cube
-                0b11111111, W0, W1, W2, W3, W4, W5, W6, W7, // WC
-            };
         }
     }
 }
