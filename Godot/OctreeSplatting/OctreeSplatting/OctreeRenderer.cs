@@ -167,7 +167,7 @@ namespace OctreeSplatting {
             Delta* deltasPtr = stackalloc Delta[8];
             CalculateDeltas(deltasPtr);
             
-            int mapThreshold8 = (MapThreshold * 3) / 2;
+            int mapThreshold8 = MapThreshold * 2;
             bool useMap8 = (mapThreshold8 > MapThreshold);
             
             byte* mapX = stackalloc byte[MapSize];
@@ -465,102 +465,27 @@ namespace OctreeSplatting {
                 
                 var bufferRowMask = (1 << Buffers.Shift) - 1;
                 
+                var tileRowSize = 1 << Buffers.TileShift;
+                
+                ulong* mapEvalX = stackalloc ulong[4];
+                ulong* mapEvalY = stackalloc ulong[4];
+                
+                // "Cube test" (to check the effects of dataset & cache misses)
+                var node = Octree[stackTop[0].Address];
+                node.Mask = 255;
+                
                 while (stackTop >= NodeStack) {
                     // We need a copy anyway for subnode processing
                     var current = *stackTop;
                     --stackTop;
                     
-                    var txMin = current.MinX & ~Renderbuffer.TileMaskX;
-                    var txMax = current.MaxX & ~Renderbuffer.TileMaskX;
-                    var tyMin = current.MinY & ~Renderbuffer.TileMaskY;
-                    var tyMax = current.MaxY & ~Renderbuffer.TileMaskY;
-                    {
-                        var tileRow = tyMin >> Renderbuffer.TileShiftY;
-                        var tileCol = txMin >> Renderbuffer.TileShiftY;
-                        for (var ty = tyMin; ty <= tyMax; ty += Renderbuffer.TileSizeY, tileRow++) {
-                            var stencilTile = Buffers.Stencil + (tileCol + (tileRow << Buffers.TileShift));
-                            for (var tx = txMin; tx <= txMax; tx += Renderbuffer.TileSizeX, stencilTile++) {
-                                var pixelMask = stencilTile[0] &
-                                    (stencilX[current.MinX - tx] ^ stencilX[current.MaxX - tx + 1]) &
-                                    (stencilY[current.MinY - ty] ^ stencilY[current.MaxY - ty + 1]);
-                                if (pixelMask != 0) goto OcclusionTestPassed;
-                            }
-                            current.MinY = ty + Renderbuffer.TileSizeY;
-                        }
-                        continue;
-                        OcclusionTestPassed:;
-                    }
+                    // ref var node = ref Octree[current.Address];
                     
-                    ref var node = ref Octree[current.Address];
-                    
-                    if (current.MaxSize < 1) {
-                        int i = current.MinX + (current.MinY << Buffers.Shift);
-                        if (current.Z < Buffers.Depth[i]) {
-                            if ((node.Mask == 0) | (MapThreshold > 1)) {
-                                var ix = i & bufferRowMask;
-                                var iy = i >> Buffers.Shift;
-                                var tx = ix & ~Renderbuffer.TileMaskX;
-                                var ty = iy & ~Renderbuffer.TileMaskY;
-                                var txi = ix >> Renderbuffer.TileShiftX;
-                                var tyi = iy >> Renderbuffer.TileShiftY;
-                                var ti = txi + (tyi << Buffers.TileShift);
-                                var pixelMask =
-                                    (stencilX[ix - tx] ^ stencilX[ix - tx + 1]) &
-                                    (stencilY[iy - ty] ^ stencilY[iy - ty + 1]);
-                                Buffers.Stencil[ti] &= ~pixelMask;
-                                
-                                Buffers.Depth[i] = current.Z;
-                                Buffers.Instance[i] = InstanceIndex;
-                                Buffers.Address[i] = current.Address;
-                            } else {
-                                int mx = ((current.MinX << SubpixelBits) + SubpixelHalf) - (current.X - (mapHalf >> current.Level));
-                                int my = ((current.MinY << SubpixelBits) + SubpixelHalf) - (current.Y - (mapHalf >> current.Level));
-                                int mapShift = MapShift - current.Level;
-                                int mask = MapX[mx >> mapShift] & MapY[my >> mapShift] & node.Mask;
-                                
-                                if (mask != 0) {
-                                    var octant = ForwardQueues[mask].Octants & 7;
-                                    
-                                    int z = current.Z + (Deltas[octant].Z >> current.Level);
-                                    
-                                    if (z < Buffers.Depth[i]) {
-                                        var ix = i & bufferRowMask;
-                                        var iy = i >> Buffers.Shift;
-                                        var tx = ix & ~Renderbuffer.TileMaskX;
-                                        var ty = iy & ~Renderbuffer.TileMaskY;
-                                        var txi = ix >> Renderbuffer.TileShiftX;
-                                        var tyi = iy >> Renderbuffer.TileShiftY;
-                                        var ti = txi + (tyi << Buffers.TileShift);
-                                        var pixelMask =
-                                            (stencilX[ix - tx] ^ stencilX[ix - tx + 1]) &
-                                            (stencilY[iy - ty] ^ stencilY[iy - ty + 1]);
-                                        Buffers.Stencil[ti] &= ~pixelMask;
-                                        
-                                        Buffers.Depth[i] = z;
-                                        Buffers.Instance[i] = InstanceIndex;
-                                        Buffers.Address[i] = node.Address + octant;
-                                    }
-                                }
-                            }
-                        }
-                    } else if ((node.Mask == 0) | (current.Level >= MaxLevel)) {
+                    if ((node.Mask == 0) | (current.Level >= MaxLevel)) {
                         if (current.MaxSize > 1) {
                             current.Z += ExtentZ >> current.Level;
                         } else {
                             current.Z += ExtentZ >> current.Level;
-                        }
-                        
-                        if (Shape == SplatShape.Point) {
-                            int dilation = (Dilation > 0 ? Dilation : 0);
-                            current.MinX = (current.X - dilation) >> SubpixelBits;
-                            current.MinY = (current.Y - dilation) >> SubpixelBits;
-                            current.MaxX = (current.X + dilation) >> SubpixelBits;
-                            current.MaxY = (current.Y + dilation) >> SubpixelBits;
-                            
-                            if (current.MinX < Viewport.MinX) current.MinX = Viewport.MinX;
-                            if (current.MinY < Viewport.MinY) current.MinY = Viewport.MinY;
-                            if (current.MaxX > Viewport.MaxX) current.MaxX = Viewport.MaxX;
-                            if (current.MaxY > Viewport.MaxY) current.MaxY = Viewport.MaxY;
                         }
                         
                         int j = current.MinX + (current.MinY << Buffers.Shift);
@@ -588,48 +513,96 @@ namespace OctreeSplatting {
                                 }
                             }
                         }
-                    } else if (current.MaxSize < MapThreshold) {
-                        int mapStartX = ((current.MinX << SubpixelBits) + SubpixelHalf) - (current.X - (mapHalf >> current.Level));
-                        int mapStartY = ((current.MinY << SubpixelBits) + SubpixelHalf) - (current.Y - (mapHalf >> current.Level));
-                        int mapShift = MapShift - current.Level;
-                        
-                        int j = current.MinX + (current.MinY << Buffers.Shift);
-                        int jEnd = current.MinX + (current.MaxY << Buffers.Shift);
-                        int iEnd = current.MaxX + (current.MinY << Buffers.Shift);
-                        int jStep = 1 << Buffers.Shift;
-                        
-                        for (int my = mapStartY; j <= jEnd; j += jStep, iEnd += jStep, my += SubpixelSize) {
-                            int maskY = MapY[my >> mapShift] & node.Mask;
-                            for (int mx = mapStartX, i = j; i <= iEnd; i++, mx += SubpixelSize) {
-                                int mask = MapX[mx >> mapShift] & maskY;
-                                
-                                if ((mask != 0) & (current.Z < Buffers.Depth[i])) {
-                                    var octant = ForwardQueues[mask].Octants & 7;
-                                    
-                                    int z = current.Z + (Deltas[octant].Z >> current.Level);
-                                    
-                                    if (z < Buffers.Depth[i]) {
-                                        var ix = i & bufferRowMask;
-                                        var iy = i >> Buffers.Shift;
-                                        var tx = ix & ~Renderbuffer.TileMaskX;
-                                        var ty = iy & ~Renderbuffer.TileMaskY;
-                                        var txi = ix >> Renderbuffer.TileShiftX;
-                                        var tyi = iy >> Renderbuffer.TileShiftY;
-                                        var ti = txi + (tyi << Buffers.TileShift);
-                                        var pixelMask =
-                                            (stencilX[ix - tx] ^ stencilX[ix - tx + 1]) &
-                                            (stencilY[iy - ty] ^ stencilY[iy - ty + 1]);
-                                        Buffers.Stencil[ti] &= ~pixelMask;
-                                        
-                                        Buffers.Depth[i] = z;
-                                        Buffers.Instance[i] = InstanceIndex;
-                                        Buffers.Address[i] = node.Address + octant;
-                                    }
-                                }
-                            }
-                        }
                     } else {
-                        if (current.MaxSize < MapThreshold8) {
+                        if (current.MaxSize < 4) {
+                            var localMask = 0UL;
+                            {
+                                var txMin = current.MinX >> Renderbuffer.TileShiftX;
+                                var txMax = current.MaxX >> Renderbuffer.TileShiftX;
+                                var tyMin = current.MinY >> Renderbuffer.TileShiftY;
+                                var tyMax = current.MaxY >> Renderbuffer.TileShiftY;
+                                var stencilTile = Buffers.Stencil + (txMin + (tyMin << Buffers.TileShift));
+                                var tx = current.MinX & ~Renderbuffer.TileMaskX;
+                                var ty = current.MinY & ~Renderbuffer.TileMaskY;
+                                var pixelMask = 0UL;
+                                switch ((txMax-txMin) | ((tyMax-tyMin) << 1)) {
+                                    case 0:
+                                        pixelMask = stencilTile[0] &
+                                            (stencilX[current.MinX - tx] ^ stencilX[current.MaxX - tx + 1]) &
+                                            (stencilY[current.MinY - ty] ^ stencilY[current.MaxY - ty + 1]);
+                                        pixelMask >>= (current.MinX - tx);
+                                        pixelMask >>= (current.MinY - ty) * 4;
+                                        localMask = pixelMask;
+                                        break;
+                                    case 1:
+                                        pixelMask = stencilTile[0] &
+                                            (stencilX[current.MinX - tx] ^ stencilX[current.MaxX - tx + 1]) &
+                                            (stencilY[current.MinY - ty] ^ stencilY[current.MaxY - ty + 1]);
+                                        pixelMask >>= (current.MinX - tx);
+                                        pixelMask >>= (current.MinY - ty) * 4;
+                                        localMask = pixelMask;
+                                        
+                                        tx += Renderbuffer.TileSizeX;
+                                        pixelMask = stencilTile[1] &
+                                            (stencilX[current.MinX - tx] ^ stencilX[current.MaxX - tx + 1]) &
+                                            (stencilY[current.MinY - ty] ^ stencilY[current.MaxY - ty + 1]);
+                                        pixelMask <<= (tx - current.MinX);
+                                        pixelMask >>= (current.MinY - ty) * 4;
+                                        localMask |= pixelMask;
+                                        break;
+                                    case 2:
+                                        pixelMask = stencilTile[0] &
+                                            (stencilX[current.MinX - tx] ^ stencilX[current.MaxX - tx + 1]) &
+                                            (stencilY[current.MinY - ty] ^ stencilY[current.MaxY - ty + 1]);
+                                        pixelMask >>= (current.MinX - tx);
+                                        pixelMask >>= (current.MinY - ty) * 4;
+                                        localMask = pixelMask;
+                                        
+                                        ty += Renderbuffer.TileSizeY;
+                                        pixelMask = stencilTile[tileRowSize] &
+                                            (stencilX[current.MinX - tx] ^ stencilX[current.MaxX - tx + 1]) &
+                                            (stencilY[current.MinY - ty] ^ stencilY[current.MaxY - ty + 1]);
+                                        pixelMask >>= (current.MinX - tx);
+                                        pixelMask <<= (ty - current.MinY) * 4;
+                                        localMask |= pixelMask;
+                                        break;
+                                    case 3:
+                                        pixelMask = stencilTile[0] &
+                                            (stencilX[current.MinX - tx] ^ stencilX[current.MaxX - tx + 1]) &
+                                            (stencilY[current.MinY - ty] ^ stencilY[current.MaxY - ty + 1]);
+                                        pixelMask >>= (current.MinX - tx);
+                                        pixelMask >>= (current.MinY - ty) * 4;
+                                        localMask = pixelMask;
+                                        
+                                        tx += Renderbuffer.TileSizeX;
+                                        pixelMask = stencilTile[1] &
+                                            (stencilX[current.MinX - tx] ^ stencilX[current.MaxX - tx + 1]) &
+                                            (stencilY[current.MinY - ty] ^ stencilY[current.MaxY - ty + 1]);
+                                        pixelMask <<= (tx - current.MinX);
+                                        pixelMask >>= (current.MinY - ty) * 4;
+                                        localMask |= pixelMask;
+                                        
+                                        ty += Renderbuffer.TileSizeY;
+                                        pixelMask = stencilTile[tileRowSize+1] &
+                                            (stencilX[current.MinX - tx] ^ stencilX[current.MaxX - tx + 1]) &
+                                            (stencilY[current.MinY - ty] ^ stencilY[current.MaxY - ty + 1]);
+                                        pixelMask <<= (tx - current.MinX);
+                                        pixelMask <<= (ty - current.MinY) * 4;
+                                        localMask |= pixelMask;
+                                        
+                                        tx -= Renderbuffer.TileSizeX;
+                                        pixelMask = stencilTile[tileRowSize] &
+                                            (stencilX[current.MinX - tx] ^ stencilX[current.MaxX - tx + 1]) &
+                                            (stencilY[current.MinY - ty] ^ stencilY[current.MaxY - ty + 1]);
+                                        pixelMask >>= (current.MinX - tx);
+                                        pixelMask <<= (ty - current.MinY) * 4;
+                                        localMask |= pixelMask;
+                                        break;
+                                }
+                                
+                                if (localMask == 0) continue;
+                            }
+                            
                             ulong mask8 = 0;
                             for (int octant = 0, mshift = 0; octant < 8; octant++, mshift += 8) {
                                 var octantMask = Octree[node.Address + octant].Mask;
@@ -641,51 +614,83 @@ namespace OctreeSplatting {
                             int mapStartY = ((current.MinY << SubpixelBits) + SubpixelHalf) - (current.Y - (mapHalf >> current.Level));
                             int mapShift = MapShift - current.Level;
                             
-                            int j = current.MinX + (current.MinY << Buffers.Shift);
-                            int jEnd = current.MinX + (current.MaxY << Buffers.Shift);
-                            int iEnd = current.MaxX + (current.MinY << Buffers.Shift);
-                            int jStep = 1 << Buffers.Shift;
+                            var blitSeq = LookupPtrs.BlitSequences[localMask];
                             
-                            for (int my = mapStartY; j <= jEnd; j += jStep, iEnd += jStep, my += SubpixelSize) {
-                                ulong maskY = MapY8[my >> mapShift] & mask8;
-                                for (int mx = mapStartX, i = j; i <= iEnd; i++, mx += SubpixelSize) {
-                                    ulong mask = MapX8[mx >> mapShift] & maskY;
+                            for (; blitSeq.XSamples != 0; blitSeq.XSamples >>= 3) {
+                                var i = blitSeq.XSamples & 3;
+                                mapEvalX[i] = MapX8[(mapStartX + i*SubpixelSize) >> mapShift];
+                            }
+                            for (; blitSeq.YSamples != 0; blitSeq.YSamples >>= 3) {
+                                var i = blitSeq.YSamples & 3;
+                                mapEvalY[i] = MapY8[(mapStartY + i*SubpixelSize) >> mapShift] & mask8;
+                            }
+                            
+                            for (; blitSeq.Count > 0; blitSeq.Count--, blitSeq.XCoords >>= 2, blitSeq.YCoords >>= 2) {
+                                var x = (blitSeq.XCoords & 3);
+                                var y = (blitSeq.YCoords & 3);
+                                ulong mask = mapEvalX[x] & mapEvalY[y];
+                                if (mask == 0) continue;
+                                var ix = current.MinX+x;
+                                var iy = current.MinY+y;
+                                var i = ix + (iy << Buffers.Shift);
+                                
+                                octant8Bit2.BoolValue = (mask & mask8Bit2) == 0;
+                                mask &= mask8Bit2 ^ unchecked((ulong)(-octant8Bit2.ByteValue));
+                                octant8Bit1.BoolValue = (mask & mask8Bit1) == 0;
+                                mask &= mask8Bit1 ^ unchecked((ulong)(-octant8Bit1.ByteValue));
+                                octant8Bit0.BoolValue = (mask & mask8Bit0) == 0;
+                                int queueItem8 = octant8Bit0.ByteValue |
+                                                (octant8Bit1.ByteValue << 1) |
+                                                (octant8Bit2.ByteValue << 2);
+                                var octant8 = (fullQueue >> (queueItem8 << 2)) & 7;
+                                
+                                int z = current.Z + (Deltas[octant8].Z >> current.Level);
+                                
+                                if (z < Buffers.Depth[i]) {
+                                    var txi = ix >> Renderbuffer.TileShiftX;
+                                    var tyi = iy >> Renderbuffer.TileShiftY;
+                                    var ti = txi + (tyi << Buffers.TileShift);
+                                    var pixelMask = 1UL << (int)(((ix & Renderbuffer.TileMaskX) |
+                                                    ((iy & Renderbuffer.TileMaskY) << Renderbuffer.TileShiftX)));
+                                    Buffers.Stencil[ti] &= ~pixelMask;
                                     
-                                    if ((mask != 0) & (current.Z < Buffers.Depth[i])) {
-                                        octant8Bit2.BoolValue = (mask & mask8Bit2) == 0;
-                                        mask &= mask8Bit2 ^ unchecked((ulong)(-octant8Bit2.ByteValue));
-                                        octant8Bit1.BoolValue = (mask & mask8Bit1) == 0;
-                                        mask &= mask8Bit1 ^ unchecked((ulong)(-octant8Bit1.ByteValue));
-                                        octant8Bit0.BoolValue = (mask & mask8Bit0) == 0;
-                                        int queueItem8 = octant8Bit0.ByteValue |
-                                                        (octant8Bit1.ByteValue << 1) |
-                                                        (octant8Bit2.ByteValue << 2);
-                                        var octant8 = (fullQueue >> (queueItem8 << 2)) & 7;
-                                        
-                                        int z = current.Z + (Deltas[octant8].Z >> current.Level);
-                                        
-                                        if (z < Buffers.Depth[i]) {
-                                            var ix = i & bufferRowMask;
-                                            var iy = i >> Buffers.Shift;
-                                            var tx = ix & ~Renderbuffer.TileMaskX;
-                                            var ty = iy & ~Renderbuffer.TileMaskY;
-                                            var txi = ix >> Renderbuffer.TileShiftX;
-                                            var tyi = iy >> Renderbuffer.TileShiftY;
-                                            var ti = txi + (tyi << Buffers.TileShift);
-                                            var pixelMask =
-                                                (stencilX[ix - tx] ^ stencilX[ix - tx + 1]) &
-                                                (stencilY[iy - ty] ^ stencilY[iy - ty + 1]);
-                                            Buffers.Stencil[ti] &= ~pixelMask;
-                                            
-                                            Buffers.Depth[i] = z;
-                                            Buffers.Instance[i] = InstanceIndex;
-                                            Buffers.Address[i] = node.Address + octant8;
-                                        }
-                                    }
+                                    Buffers.Depth[i] = z;
+                                    Buffers.Instance[i] = InstanceIndex;
+                                    Buffers.Address[i] = node.Address + octant8;
+                                    
+                                    // var octantMask = Octree[node.Address + octant8].Mask;
+                                    // if (octantMask == 0) {
+                                    //     Buffers.Address[i] = node.Address + octant8;
+                                    // } else {
+                                    //     var address = Octree[node.Address + octant8].Address;
+                                    //     var octant = ForwardQueues[octantMask].Octants & 7;
+                                    //     Buffers.Address[i] = address + octant;
+                                    // }
                                 }
                             }
                             
                             continue;
+                        }
+                        
+                        {
+                            var txMin = current.MinX & ~Renderbuffer.TileMaskX;
+                            var txMax = current.MaxX & ~Renderbuffer.TileMaskX;
+                            var tyMin = current.MinY & ~Renderbuffer.TileMaskY;
+                            var tyMax = current.MaxY & ~Renderbuffer.TileMaskY;
+                            var tileX = txMin >> Renderbuffer.TileShiftX;
+                            var tileY = tyMin >> Renderbuffer.TileShiftY;
+                            for (var ty = tyMin; ty <= tyMax; ty += Renderbuffer.TileSizeY, tileY++) {
+                                var stencilTile = Buffers.Stencil + (tileX + (tileY << Buffers.TileShift));
+                                for (var tx = txMin; tx <= txMax; tx += Renderbuffer.TileSizeX, stencilTile++) {
+                                    var pixelMask = stencilTile[0] &
+                                        (stencilX[current.MinX - tx] ^ stencilX[current.MaxX - tx + 1]) &
+                                        (stencilY[current.MinY - ty] ^ stencilY[current.MaxY - ty + 1]);
+                                    if (pixelMask != 0) goto OcclusionTestPassed;
+                                }
+                                current.MinY = ty + Renderbuffer.TileSizeY;
+                            }
+                            continue;
+                            OcclusionTestPassed:;
                         }
                         
                         var queue = ReverseQueues[node.Mask].Octants;

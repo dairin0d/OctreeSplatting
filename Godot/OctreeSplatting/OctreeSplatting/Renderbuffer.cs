@@ -17,8 +17,10 @@ namespace OctreeSplatting {
 			public ulong* Stencil;
 		}
 		
-		public const int TileShiftX = 3;
-		public const int TileShiftY = 3;
+		// public const int TileShiftX = 3;
+		// public const int TileShiftY = 3;
+		public const int TileShiftX = 2;
+		public const int TileShiftY = 2;
 		public const int TileSizeX = 1 << TileShiftX;
 		public const int TileSizeY = 1 << TileShiftY;
 		public const int TileMaskX = TileSizeX - 1;
@@ -79,6 +81,11 @@ namespace OctreeSplatting {
 			
 			dataRef.Set(data);
 			
+			var stencilDefault = ulong.MaxValue;
+			if (TileArea < 64) {
+				stencilDefault = (1 << TileArea) - 1;
+			}
+			
 			var buffers = GetBuffers();
 			
 			var tiles = ToTiles(new Range2D {MaxX = sizeX - 1, MaxY = sizeY - 1});
@@ -86,7 +93,7 @@ namespace OctreeSplatting {
 				for (var tx = tiles.MinX; tx <= tiles.MaxX; tx++) {
 					// TODO: mask the parts that are outside of the viewport
 					var tileIndex = tx | (ty << buffers.TileShift);
-					buffers.Stencil[tileIndex] = ulong.MaxValue;
+					buffers.Stencil[tileIndex] = stencilDefault;
 				}
 			}
 			
