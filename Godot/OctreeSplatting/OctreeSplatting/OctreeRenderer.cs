@@ -108,16 +108,29 @@ namespace OctreeSplatting {
             
             var buffers = Renderbuffer.GetBuffers();
             
-            int j = region.MinX + (region.MinY << buffers.Shift);
-            int jEnd = region.MinX + (region.MaxY << buffers.Shift);
-            int iEnd = region.MaxX + (region.MinY << buffers.Shift);
-            int jStep = 1 << buffers.Shift;
-            for (; j <= jEnd; j += jStep, iEnd += jStep) {
-                for (int i = j; i <= iEnd; i++) {
-                    if (z < buffers.Depth[i]) return false;
+            var lookupPtrs = Lookups.GetPointers();
+            var stencilX = lookupPtrs.StencilX;
+            var stencilY = lookupPtrs.StencilY;
+            
+            var txMin = region.MinX & ~Renderbuffer.TileMaskX;
+            var txMax = region.MaxX & ~Renderbuffer.TileMaskX;
+            var tyMin = region.MinY & ~Renderbuffer.TileMaskY;
+            var tyMax = region.MaxY & ~Renderbuffer.TileMaskY;
+            {
+                var tileRow = tyMin >> Renderbuffer.TileShiftY;
+                var tileCol = txMin >> Renderbuffer.TileShiftY;
+                for (var ty = tyMin; ty <= tyMax; ty += Renderbuffer.TileSizeY, tileRow++) {
+                    var stencilTile = buffers.Stencil + (tileCol + (tileRow << buffers.TileShift));
+                    for (var tx = txMin; tx <= txMax; tx += Renderbuffer.TileSizeX, stencilTile++) {
+                        var pixelMask = stencilTile[0] &
+                            (stencilX[region.MinX - tx] ^ stencilX[region.MaxX - tx + 1]) &
+                            (stencilY[region.MinY - ty] ^ stencilY[region.MaxY - ty + 1]);
+                        if (pixelMask != 0) return false;
+                    }
+                    lastY = ty + Renderbuffer.TileSizeY;
                 }
-                lastY++;
             }
+            
             return true;
         }
         
