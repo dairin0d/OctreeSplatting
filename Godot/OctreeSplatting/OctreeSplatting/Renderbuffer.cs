@@ -21,6 +21,8 @@ namespace OctreeSplatting {
 		public const int TileShiftY = 3;
 		public const int TileSizeX = 1 << TileShiftX;
 		public const int TileSizeY = 1 << TileShiftY;
+		public const int TileMaskX = TileSizeX - 1;
+		public const int TileMaskY = TileSizeY - 1;
 		public const int TileArea = TileSizeX * TileSizeY;
 		
 		public const int DepthBits = 24;
