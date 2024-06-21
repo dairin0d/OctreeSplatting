@@ -79,6 +79,8 @@ namespace OctreeSplatting {
         private UnsafeRef octreeRef;
         private UnsafeRef queuesRef;
         
+        private static SpinTimer spinTimer = new SpinTimer();
+        
         public void Begin(Renderbuffer renderbuffer, Range2D viewport) {
             Renderbuffer = renderbuffer;
             Viewport = viewport;
@@ -88,9 +90,16 @@ namespace OctreeSplatting {
         
         public void Begin() {
             queuesRef.Set(OctantOrder.SparseQueues);
+            
+            spinTimer.Reset();
+            spinTimer.StartCounter();
+            Timing.Start();
         }
         
         public void Finish() {
+            spinTimer.StopCounter();
+            Timing.Stop();
+            
             octreeRef.Clear();
             queuesRef.Clear();
             Lookups.FreePointers();
@@ -486,11 +495,12 @@ namespace OctreeSplatting {
                     var current = *stackTop;
                     --stackTop;
                     
-                    var txMin = current.MinX & ~Renderbuffer.TileMaskX;
-                    var txMax = current.MaxX & ~Renderbuffer.TileMaskX;
-                    var tyMin = current.MinY & ~Renderbuffer.TileMaskY;
-                    var tyMax = current.MaxY & ~Renderbuffer.TileMaskY;
                     {
+                        var time = spinTimer.Ticks;
+                        var txMin = current.MinX & ~Renderbuffer.TileMaskX;
+                        var txMax = current.MaxX & ~Renderbuffer.TileMaskX;
+                        var tyMin = current.MinY & ~Renderbuffer.TileMaskY;
+                        var tyMax = current.MaxY & ~Renderbuffer.TileMaskY;
                         var tileRow = tyMin >> Renderbuffer.TileShiftY;
                         var tileCol = txMin >> Renderbuffer.TileShiftY;
                         for (var ty = tyMin; ty <= tyMax; ty += Renderbuffer.TileSizeY, tileRow++) {
@@ -503,13 +513,16 @@ namespace OctreeSplatting {
                             }
                             current.MinY = ty + Renderbuffer.TileSizeY;
                         }
+                        Timing.Occlusion += spinTimer.Ticks - time;
                         continue;
                         OcclusionTestPassed:;
+                        Timing.Occlusion += spinTimer.Ticks - time;
                     }
                     
                     ref var node = ref Octree[current.Address];
                     
                     if (current.MaxSize < 1) {
+                        var time = spinTimer.Ticks;
                         int i = current.MinX + (current.MinY << Buffers.Shift);
                         if (current.Z < Buffers.Depth[i]) {
                             if ((node.Mask == 0) | (MapThreshold > 1)) {
@@ -559,7 +572,9 @@ namespace OctreeSplatting {
                                 }
                             }
                         }
+                        Timing.Pixel += spinTimer.Ticks - time;
                     } else if ((node.Mask == 0) | (current.Level >= MaxLevel)) {
+                        var time = spinTimer.Ticks;
                         if (current.MaxSize > 1) {
                             current.Z += ExtentZ >> current.Level;
                         } else {
@@ -591,7 +606,9 @@ namespace OctreeSplatting {
                                 }
                             }
                         }
+                        Timing.Leaf += spinTimer.Ticks - time;
                     } else if (current.MaxSize < MapThreshold) {
+                        var time = spinTimer.Ticks;
                         int mapStartX = ((current.MinX << SubpixelBits) + SubpixelHalf) - (current.X - (mapHalf >> current.Level));
                         int mapStartY = ((current.MinY << SubpixelBits) + SubpixelHalf) - (current.Y - (mapHalf >> current.Level));
                         int mapShift = MapShift - current.Level;
@@ -631,8 +648,10 @@ namespace OctreeSplatting {
                                 }
                             }
                         }
+                        Timing.Map += spinTimer.Ticks - time;
                     } else {
                         if (current.MaxSize < MapThreshold8) {
+                            var time = spinTimer.Ticks;
                             ulong mask8 = 0;
                             for (int octant = 0, mshift = 0; octant < 8; octant++, mshift += 8) {
                                 var octantMask = Octree[node.Address + octant].Mask;
@@ -649,12 +668,16 @@ namespace OctreeSplatting {
                             int iEnd = current.MaxX + (current.MinY << Buffers.Shift);
                             int jStep = 1 << Buffers.Shift;
                             
+                            var time2 = spinTimer.Ticks;
+                            Timing.Map8Pre += time2 - time;
+                            
                             for (int my = mapStartY; j <= jEnd; j += jStep, iEnd += jStep, my += SubpixelSize) {
                                 ulong maskY = MapY8[my >> mapShift] & mask8;
                                 for (int mx = mapStartX, i = j; i <= iEnd; i++, mx += SubpixelSize) {
                                     ulong mask = MapX8[mx >> mapShift] & maskY;
                                     
                                     if ((mask != 0) & (current.Z < Buffers.Depth[i])) {
+                                        var timeW1 = spinTimer.Ticks;
                                         octant8Bit2.BoolValue = (mask & mask8Bit2) == 0;
                                         mask &= mask8Bit2 ^ unchecked((ulong)(-octant8Bit2.ByteValue));
                                         octant8Bit1.BoolValue = (mask & mask8Bit1) == 0;
@@ -666,6 +689,9 @@ namespace OctreeSplatting {
                                         var octant8 = (fullQueue >> (queueItem8 << 2)) & 7;
                                         
                                         int z = current.Z + (Deltas[octant8].Z >> current.Level);
+                                        
+                                        var timeW2 = spinTimer.Ticks;
+                                        Timing.Map8Select += timeW2 - timeW1;
                                         
                                         if (z < Buffers.Depth[i]) {
                                             var ix = i & bufferRowMask;
@@ -684,10 +710,15 @@ namespace OctreeSplatting {
                                             Buffers.Instance[i] = InstanceIndex;
                                             Buffers.Address[i] = node.Address + octant8;
                                         }
+                                        
+                                        Timing.Map8Write += spinTimer.Ticks - timeW2;
                                     }
                                 }
                             }
                             
+                            var time3 = spinTimer.Ticks;
+                            Timing.Map8Loop += time3 - time2;
+                            Timing.Map8 += time3 - time;
                             continue;
                         }
                         
@@ -705,6 +736,9 @@ namespace OctreeSplatting {
                         //     continue;
                         //     OcclusionTestPassed:;
                         // }
+                        
+                        {
+                        var time = spinTimer.Ticks;
                         
                         var queue = ReverseQueues[node.Mask].Octants;
                         
@@ -747,6 +781,9 @@ namespace OctreeSplatting {
                             stackTop->Z = current.Z + (delta.Z >> current.Level);
                             stackTop->Address = node.Address + octant;
                             stackTop->Level = nextLevel;
+                        }
+                        
+                        Timing.Stack += spinTimer.Ticks - time;
                         }
                     }
                 }

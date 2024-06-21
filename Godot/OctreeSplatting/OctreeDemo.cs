@@ -1,6 +1,8 @@
 using Godot;
 using System.Runtime.InteropServices;
 
+using System.Threading;
+
 namespace OctreeSplatting.GodotDemo {
 	public partial class OctreeDemo : TextureRect {
 		private OctreeSplatting.Demo.DemoController demoController;
@@ -16,7 +18,24 @@ namespace OctreeSplatting.GodotDemo {
 		
 		private Vector2 mouseSpeed;
 		
+		private OctreeNode[] octree;
+		private OctreeNode[] characterOctree;
+		private OctreeNode[] cubeOctree = new OctreeNode[] {
+			new OctreeNode {Address = 0, Data = new Color24{G=196}, Mask=255},
+			new OctreeNode {Address = 0, Data = new Color24{G=196}, Mask=255},
+			new OctreeNode {Address = 0, Data = new Color24{G=196}, Mask=255},
+			new OctreeNode {Address = 0, Data = new Color24{G=196}, Mask=255},
+			new OctreeNode {Address = 0, Data = new Color24{G=196}, Mask=255},
+			new OctreeNode {Address = 0, Data = new Color24{G=196}, Mask=255},
+			new OctreeNode {Address = 0, Data = new Color24{G=196}, Mask=255},
+			new OctreeNode {Address = 0, Data = new Color24{G=196}, Mask=255},
+			new OctreeNode {Address = 0, Data = new Color24{G=196}, Mask=255},
+		};
+		private bool useLoadedModels = true;
+		
 		public override void _Ready() {
+			Thread.CurrentThread.Priority = ThreadPriority.Highest;
+			
 			DisplayServer.WindowSetSize(new Vector2I(width, height));
 			
 			colorbuffer = new byte[width*height*bytesPerPixel];
@@ -48,8 +67,8 @@ namespace OctreeSplatting.GodotDemo {
 		}
 
 		private void InitializeScene() {
-			var octree = LoadOctree($"../../Unity/OctreeSplatting/Assets/Resources/DemoOctree.bytes");
-			var characterOctree = LoadOctree($"../../Unity/OctreeSplatting/Assets/Resources/CharacterOctree.bytes");
+			octree = LoadOctree($"../../Unity/OctreeSplatting/Assets/Resources/DemoOctree.bytes");
+			characterOctree = LoadOctree($"../../Unity/OctreeSplatting/Assets/Resources/CharacterOctree.bytes");
 
 			if (octree == null) {
 				GD.Print("ERROR: DemoOctree dataset not found!");
@@ -104,7 +123,13 @@ namespace OctreeSplatting.GodotDemo {
 			}
 
 			if (Input.IsActionJustPressed("demo_show_bounds")) {
-				demoController.ShowBounds = !demoController.ShowBounds;
+				// demoController.ShowBounds = !demoController.ShowBounds;
+				useLoadedModels = !useLoadedModels;
+				if (useLoadedModels) {
+					demoController.AssignOctrees(octree, characterOctree);
+				} else {
+					demoController.AssignOctrees(cubeOctree, cubeOctree);
+				}
 			}
 
 			if (Input.IsActionJustPressed("demo_use_upscaling")) {
