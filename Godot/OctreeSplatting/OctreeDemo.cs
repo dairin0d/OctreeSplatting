@@ -128,10 +128,12 @@ namespace OctreeSplatting.GodotDemo {
 				IntKeyDown("demo_move_z_pos") - IntKeyDown("demo_move_z_neg")
 			);
 
+			movement *= 0.5f;
+
 			if (Input.IsActionPressed("demo_fast_speed")) {
-				movement *= 10f;
+				movement *= 4f;
 			} else if (Input.IsActionPressed("demo_slow_speed")) {
-				movement *= 0.05f;
+				movement *= 0.25f;
 			}
 
 			const float cameraSpeed = 1.5f;
