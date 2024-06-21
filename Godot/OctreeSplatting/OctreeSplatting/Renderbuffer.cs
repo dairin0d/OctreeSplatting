@@ -31,6 +31,7 @@ namespace OctreeSplatting {
 		private int tilesX, tilesY, tileShiftX;
 		private byte[] data;
 		private UnsafeRef dataRef;
+		private Color32[] colorHistory;
 		private Color32[] finalPixels;
 		private InstanceInfo[] instanceInfos = new InstanceInfo[256];
 		private uint instanceCount;
@@ -68,6 +69,7 @@ namespace OctreeSplatting {
 			data = new byte[sizeof(ulong) * tileArea + 3 * sizeof(int) * pixelArea];
 			
 			finalPixels = new Color32[sizeX * sizeY];
+			colorHistory = new Color32[finalPixels.Length];
 		}
 		
 		public unsafe void Begin(Color32 background) {
@@ -139,26 +141,55 @@ namespace OctreeSplatting {
 			var step = UseTemporalUpscaling ? 2 : 1;
 			GetSamplingOffset(out int startX, out int startY);
 			
+			int* hitoryCoefs = stackalloc int[2*2];
+			for (int frameOffset = -3; frameOffset <= 0; frameOffset++) {
+				GetSamplingOffset(out int dx, out int dy, frameOffset);
+				hitoryCoefs[dx | (dy << 1)] = ((4 + frameOffset) * 255) / 4;
+			}
+			
 			var buffers = GetBuffers();
-			fixed (Color32* finalPtr = finalPixels)
+			fixed (Color32* finalPtr = finalPixels, historyPtr = colorHistory)
 			{
 				for (int y = startY, yData = 0; y < sizeY; y += step, yData++) {
 					int dataIndex = yData << shiftX;
 					int colorIndex = startX + (y * sizeX);
 					for (int x = startX; x < sizeX; x += step, colorIndex += step, dataIndex++) {
+						var color = background;
+						
 						var instance = buffers.Instance[dataIndex];
 						if (instance < instanceCount) {
 							var instanceInfo = instanceInfos[instance];
 							var address = buffers.Address[dataIndex];
                             if (address < instanceInfo.Octree.Length) {
-                                finalPtr[colorIndex].RGB = instanceInfo.Octree[address].Data;
-                                finalPtr[colorIndex].A = 255;
-                            } else {
-                                finalPtr[colorIndex] = background;
+								color.RGB = instanceInfo.Octree[address].Data;
+								color.A = 255;
                             }
-						} else {
-							finalPtr[colorIndex] = background;
 						}
+						
+						if (UseTemporalUpscaling) {
+							var deltaR = color.R - historyPtr[colorIndex].R;
+							if (deltaR < 0) deltaR = -deltaR;
+							var deltaG = color.G - historyPtr[colorIndex].G;
+							if (deltaG < 0) deltaG = -deltaG;
+							var deltaB = color.B - historyPtr[colorIndex].B;
+							if (deltaB < 0) deltaB = -deltaB;
+							var deltaMax = (deltaR > deltaG ? deltaR : deltaG);
+							if (deltaB > deltaMax) deltaMax = deltaB;
+							
+							for (var dy = 0; dy < 2; dy++) {
+								for (var dx = 0; dx < 2; dx++) {
+									var factor = (deltaMax * hitoryCoefs[dx | (dy << 1)] + 255) >> 8;
+									var factorInv = 255 - factor;
+									var i = (x ^ dx) + (y ^ dy) * sizeX;
+									finalPtr[i].R = (byte)((color.R * factor + finalPtr[i].R * factorInv + 255) >> 8);
+									finalPtr[i].G = (byte)((color.G * factor + finalPtr[i].G * factorInv + 255) >> 8);
+									finalPtr[i].B = (byte)((color.B * factor + finalPtr[i].B * factorInv + 255) >> 8);
+								}
+							}
+						}
+						
+						finalPtr[colorIndex] = color;
+						historyPtr[colorIndex] = color;
 					}
 				}
 			}
@@ -176,18 +207,18 @@ namespace OctreeSplatting {
 			return range;
 		}
 		
-		public void GetSamplingOffset(out float x, out float y) {
-			GetSamplingOffset(out int ix, out int iy);
+		public void GetSamplingOffset(out float x, out float y, int frameOffset = 0) {
+			GetSamplingOffset(out int ix, out int iy, frameOffset);
 			x = (0.5f - ix) * 0.5f;
 			y = (0.5f - iy) * 0.5f;
 		}
 		
-		public void GetSamplingOffset(out int x, out int y) {
+		public void GetSamplingOffset(out int x, out int y, int frameOffset = 0) {
 			x = 0; y = 0;
 			
 			if (!UseTemporalUpscaling) return;
 			
-			switch (FrameCount & 0b11) {
+			switch ((FrameCount + frameOffset) & 0b11) {
 				case 0: x = 0; y = 0; return;
 				case 1: x = 1; y = 1; return;
 				case 2: x = 1; y = 0; return;
