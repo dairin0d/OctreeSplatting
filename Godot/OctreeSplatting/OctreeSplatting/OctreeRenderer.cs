@@ -114,6 +114,8 @@ namespace OctreeSplatting {
         private UnsafeRef traceBufferRef;
         private UnsafeRef cubeNodesRef;
         
+        private static SpinTimer spinTimer = new SpinTimer();
+        
         public void Begin(PixelData[] pixels, int bufferShift, Range2D viewport) {
             Pixels = pixels;
             BufferShift = bufferShift;
@@ -129,9 +131,16 @@ namespace OctreeSplatting {
             queuesRef.Set(OctantOrder.SparseQueues);
             traceBufferRef.Set(traceBuffer);
             cubeNodesRef.Set(CubeOctree.CubeNodes);
+            
+            spinTimer.Reset();
+            spinTimer.StartCounter();
+            Timing.Start();
         }
         
         public void Finish() {
+            spinTimer.StopCounter();
+            Timing.Stop();
+            
             pixelsRef.Clear();
             octreeRef.Clear();
             queuesRef.Clear();
@@ -513,14 +522,19 @@ namespace OctreeSplatting {
                 
                 stencil = int.MinValue;
                 
+                // var node = Octree[stackTop->Address];
+                // node.Mask = 255;
+                
                 while (stackTop >= NodeStack) {
                     // We need a copy anyway for subnode processing
                     var current = *stackTop;
                     --stackTop;
                     
-                    ref var node = ref Octree[current.Address];
+                    // ref var node = ref Octree[current.Address];
+                    var node = Octree[current.Address];
                     
                     if (current.MaxSize < 1) {
+                        var time = spinTimer.Ticks;
                         int i = current.MinX + (current.MinY << BufferShift);
                         if (current.Z < Pixels[i].Depth) {
                             if ((node.Mask == 0) | (MapThreshold > 1)) {
@@ -546,7 +560,9 @@ namespace OctreeSplatting {
                                 }
                             }
                         }
+                        Timing.Pixel += spinTimer.Ticks - time;
                     } else if ((node.Mask == 0) | (current.Level >= MaxLevel)) {
+                        var time = spinTimer.Ticks;
                         if (current.MaxSize > 1) {
                             if (Shape == SplatShape.Cube) {
                                 RenderCube(stackTop + 1, ref traceFront, node.Data);
@@ -589,7 +605,9 @@ namespace OctreeSplatting {
                                 }
                             }
                         }
+                        Timing.Leaf += spinTimer.Ticks - time;
                     } else if (current.MaxSize < MapThreshold) {
+                        var time = spinTimer.Ticks;
                         int mapStartX = ((current.MinX << SubpixelBits) + SubpixelHalf) - (current.X - (mapHalf >> current.Level));
                         int mapStartY = ((current.MinY << SubpixelBits) + SubpixelHalf) - (current.Y - (mapHalf >> current.Level));
                         int mapShift = MapShift - current.Level;
@@ -617,8 +635,10 @@ namespace OctreeSplatting {
                                 }
                             }
                         }
+                        Timing.Map += spinTimer.Ticks - time;
                     } else {
                         if (current.MaxSize < MapThreshold8) {
+                            var time = spinTimer.Ticks;
                             ulong mask8 = 0;
                             for (int octant = 0, mshift = 0; octant < 8; octant++, mshift += 8) {
                                 var octantMask = Octree[node.Address + octant].Mask;
@@ -635,12 +655,16 @@ namespace OctreeSplatting {
                             int iEnd = current.MaxX + (current.MinY << BufferShift);
                             int jStep = 1 << BufferShift;
                             
+                            var time2 = spinTimer.Ticks;
+                            Timing.Map8Pre += time2 - time;
+                            
                             for (int my = mapStartY; j <= jEnd; j += jStep, iEnd += jStep, my += SubpixelSize) {
                                 ulong maskY = MapY8[my >> mapShift] & mask8;
                                 for (int mx = mapStartX, i = j; i <= iEnd; i++, mx += SubpixelSize) {
                                     ulong mask = MapX8[mx >> mapShift] & maskY;
                                     
                                     if ((mask != 0) & (current.Z < Pixels[i].Depth)) {
+                                        var timeW1 = spinTimer.Ticks;
                                         octant8Bit2.BoolValue = (mask & mask8Bit2) == 0;
                                         mask &= mask8Bit2 ^ unchecked((ulong)(-octant8Bit2.ByteValue));
                                         octant8Bit1.BoolValue = (mask & mask8Bit1) == 0;
@@ -653,19 +677,26 @@ namespace OctreeSplatting {
                                         
                                         int z = current.Z + (Deltas[octant8].Z >> current.Level);
                                         
+                                        var timeW2 = spinTimer.Ticks;
+                                        Timing.Map8Select += timeW2 - timeW1;
+                                        
                                         if (z < Pixels[i].Depth) {
                                             Pixels[i].Depth = z | stencil;
                                             Pixels[i].Color.RGB = Octree[node.Address + octant8].Data;
                                             *(traceFront++) = i;
                                         }
+                                        Timing.Map8Write += spinTimer.Ticks - timeW2;
                                     }
                                 }
                             }
-                            
+                            var time3 = spinTimer.Ticks;
+                            Timing.Map8Loop += time3 - time2;
+                            Timing.Map8 += time3 - time;
                             continue;
                         }
                         
                         {
+                            var time = spinTimer.Ticks;
                             int j = current.MinX + (current.MinY << BufferShift);
                             int jEnd = current.MinX + (current.MaxY << BufferShift);
                             int iEnd = current.MaxX + (current.MinY << BufferShift);
@@ -676,10 +707,14 @@ namespace OctreeSplatting {
                                 }
                                 current.MinY++;
                             }
+                            Timing.Occlusion += spinTimer.Ticks - time;
                             continue;
                             OcclusionTestPassed:;
+                            Timing.Occlusion += spinTimer.Ticks - time;
                         }
                         
+                        {
+                        var time = spinTimer.Ticks;
                         var queue = ReverseQueues[node.Mask].Octants;
                         
                         int nextLevel = current.Level + 1;
@@ -721,6 +756,8 @@ namespace OctreeSplatting {
                             stackTop->Z = current.Z + (delta.Z >> current.Level);
                             stackTop->Address = node.Address + octant;
                             stackTop->Level = nextLevel;
+                        }
+                        Timing.Stack += spinTimer.Ticks - time;
                         }
                     }
                 }

@@ -125,6 +125,13 @@ namespace OctreeSplatting.Demo {
             }
         }
         
+        public void AssignOctrees(OctreeNode[] octree, OctreeNode[] playerOctree = null) {
+            foreach (var model in models) {
+                model.Octree = octree;
+            }
+            playerModel.Octree = playerOctree;
+        }
+        
         public (int, int, Color32[]) GetImageData() {
             return (renderbuffer.SizeX, renderbuffer.SizeY, renderbuffer.ColorPixels);
         }
