@@ -108,6 +108,17 @@ namespace OctreeSplatting {
             
             var buffers = Renderbuffer.GetBuffers();
             
+            // int j = region.MinX + (region.MinY << buffers.Shift);
+            // int jEnd = region.MinX + (region.MaxY << buffers.Shift);
+            // int iEnd = region.MaxX + (region.MinY << buffers.Shift);
+            // int jStep = 1 << buffers.Shift;
+            // for (; j <= jEnd; j += jStep, iEnd += jStep) {
+            //     for (int i = j; i <= iEnd; i++) {
+            //         if (z < buffers.Depth[i]) return false;
+            //     }
+            //     lastY++;
+            // }
+            
             var lookupPtrs = Lookups.GetPointers();
             var stencilX = lookupPtrs.StencilX;
             var stencilY = lookupPtrs.StencilY;
@@ -168,6 +179,7 @@ namespace OctreeSplatting {
             CalculateDeltas(deltasPtr);
             
             int mapThreshold8 = (MapThreshold * 3) / 2;
+            // int mapThreshold8 = MapThreshold * 2;
             bool useMap8 = (mapThreshold8 > MapThreshold);
             
             byte* mapX = stackalloc byte[MapSize];
@@ -465,6 +477,10 @@ namespace OctreeSplatting {
                 
                 var bufferRowMask = (1 << Buffers.Shift) - 1;
                 
+                // "Cube test" (to check the effects of dataset & cache misses)
+                // var node = Octree[stackTop[0].Address];
+                // node.Mask = 255;
+                
                 while (stackTop >= NodeStack) {
                     // We need a copy anyway for subnode processing
                     var current = *stackTop;
@@ -548,19 +564,6 @@ namespace OctreeSplatting {
                             current.Z += ExtentZ >> current.Level;
                         } else {
                             current.Z += ExtentZ >> current.Level;
-                        }
-                        
-                        if (Shape == SplatShape.Point) {
-                            int dilation = (Dilation > 0 ? Dilation : 0);
-                            current.MinX = (current.X - dilation) >> SubpixelBits;
-                            current.MinY = (current.Y - dilation) >> SubpixelBits;
-                            current.MaxX = (current.X + dilation) >> SubpixelBits;
-                            current.MaxY = (current.Y + dilation) >> SubpixelBits;
-                            
-                            if (current.MinX < Viewport.MinX) current.MinX = Viewport.MinX;
-                            if (current.MinY < Viewport.MinY) current.MinY = Viewport.MinY;
-                            if (current.MaxX > Viewport.MaxX) current.MaxX = Viewport.MaxX;
-                            if (current.MaxY > Viewport.MaxY) current.MaxY = Viewport.MaxY;
                         }
                         
                         int j = current.MinX + (current.MinY << Buffers.Shift);
@@ -687,6 +690,21 @@ namespace OctreeSplatting {
                             
                             continue;
                         }
+                        
+                        // {
+                        //     int j = current.MinX + (current.MinY << Buffers.Shift);
+                        //     int jEnd = current.MinX + (current.MaxY << Buffers.Shift);
+                        //     int iEnd = current.MaxX + (current.MinY << Buffers.Shift);
+                        //     int jStep = 1 << Buffers.Shift;
+                        //     for (; j <= jEnd; j += jStep, iEnd += jStep) {
+                        //         for (int i = j; i <= iEnd; i++) {
+                        //             if (current.Z < Buffers.Depth[i]) goto OcclusionTestPassed;
+                        //         }
+                        //         current.MinY++;
+                        //     }
+                        //     continue;
+                        //     OcclusionTestPassed:;
+                        // }
                         
                         var queue = ReverseQueues[node.Mask].Octants;
                         
