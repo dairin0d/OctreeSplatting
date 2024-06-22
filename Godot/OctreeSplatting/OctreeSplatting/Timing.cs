@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text;
 
 namespace OctreeSplatting {
     public static class Timing {
@@ -15,7 +16,26 @@ namespace OctreeSplatting {
         
         public static Stopwatch stopwatch = new Stopwatch();
         
+        public static string[] Lines = {
+            "Pixel: {0:F2}\n",
+            "Leaf: {0:F2}\n",
+            "Map: {0:F2}\n",
+            "Map8: {0:F2}\n",
+            "* Map8Pre: {0:F2}\n",
+            "* Map8Loop: {0:F2}\n",
+            "* Map8Select: {0:F2}\n",
+            "* Map8Write: {0:F2}\n",
+            "Occlusion: {0:F2}\n",
+            "Stack: {0:F2}\n",
+            "Total: {0:F2}\n",
+        };
+        public static double[] Times = new double[Lines.Length];
+        public static int AccumCount;
+        public static bool Accumulate = true;
+        
         public static string Report;
+        
+        private static StringBuilder stringBuilder = new StringBuilder();
         
         public static void Start() {
             Pixel = 0;
@@ -34,32 +54,33 @@ namespace OctreeSplatting {
         
         public static void Stop() {
             stopwatch.Stop();
-            var T = (double)(Pixel+Leaf+Map+Map8+Occlusion+Stack);
-            var TP = Pixel / T;
-            var TL = Leaf / T;
-            var TM = Map / T;
-            var TM8p = Map8Pre / T;
-            var TM8l = Map8Loop / T;
-            var TM8s = Map8Select / T;
-            var TM8w = Map8Write / T;
-            var TM8 = Map8 / T;
-            var TO = Occlusion / T;
-            var TS = Stack / T;
+            
+            if (!Accumulate) AccumCount = 0;
+            
             var ms = stopwatch.ElapsedMilliseconds;
-            // Report = $"{ms} ms, P:{TP:P1}, L:{TL:P1}, M:{TM:P1}, M8:{TM8:P1} (p:{TM8p:P1}, l:{TM8l:P1}, s:{TM8s:P1}, w:{TM8w:P1}), O:{TO:P1}, S:{TS:P1}";
-            Report = string.Join('\n',
-                $"Pixel: {Pixel/T:P1}",
-                $"Leaf: {Leaf/T:P1}",
-                $"Map: {Map/T:P1}",
-                $"Map8: {Map8/T:P1}",
-                $"* Map8Pre: {Map8Pre/T:P1}",
-                $"* Map8Loop: {Map8Loop/T:P1}",
-                $"* Map8Select: {Map8Select/T:P1}",
-                $"* Map8Write: {Map8Write/T:P1}",
-                $"Occlusion: {Occlusion/T:P1}",
-                $"Stack: {Stack/T:P1}",
-                $"{ms} ms"
-            );
+            var scale = ms / (double)(Pixel+Leaf+Map+Map8+Occlusion+Stack);
+            UpdateValue(0, Pixel * scale);
+            UpdateValue(1, Leaf * scale);
+            UpdateValue(2, Map * scale);
+            UpdateValue(3, Map8 * scale);
+            UpdateValue(4, Map8Pre * scale);
+            UpdateValue(5, Map8Loop * scale);
+            UpdateValue(6, Map8Select * scale);
+            UpdateValue(7, Map8Write * scale);
+            UpdateValue(8, Occlusion * scale);
+            UpdateValue(9, Stack * scale);
+            UpdateValue(10, ms);
+            AccumCount++;
+            
+            stringBuilder.Clear();
+            for (var i = 0; i < Lines.Length; i++) {
+                stringBuilder.AppendFormat(Lines[i], Times[i]);
+            }
+            Report = stringBuilder.ToString();
+        }
+        
+        private static void UpdateValue(int index, double newValue) {
+            Times[index] = (newValue + AccumCount*Times[index]) / (AccumCount+1);
         }
     }
 }
