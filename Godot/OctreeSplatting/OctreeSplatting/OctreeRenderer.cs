@@ -187,8 +187,9 @@ namespace OctreeSplatting {
             Delta* deltasPtr = stackalloc Delta[8];
             CalculateDeltas(deltasPtr);
             
-            int mapThreshold8 = (MapThreshold * 3) / 2;
+            // int mapThreshold8 = (MapThreshold * 3) / 2;
             // int mapThreshold8 = MapThreshold * 2;
+            int mapThreshold8 = 4;
             bool useMap8 = (mapThreshold8 > MapThreshold);
             
             byte* mapX = stackalloc byte[MapSize];
@@ -490,13 +491,17 @@ namespace OctreeSplatting {
                 // var node = Octree[stackTop[0].Address];
                 // node.Mask = 255;
                 
+                var lMapX8 = stackalloc ulong[8];
+                var lMapY8 = stackalloc ulong[8];
+                
                 while (stackTop >= NodeStack) {
                     // We need a copy anyway for subnode processing
                     var current = *stackTop;
                     --stackTop;
                     
                     {
-                        var time = spinTimer.Ticks;
+                        Timing.Occlusion++;
+                        // var time = spinTimer.Ticks;
                         var txMin = current.MinX & ~Renderbuffer.TileMaskX;
                         var txMax = current.MaxX & ~Renderbuffer.TileMaskX;
                         var tyMin = current.MinY & ~Renderbuffer.TileMaskY;
@@ -513,16 +518,16 @@ namespace OctreeSplatting {
                             }
                             current.MinY = ty + Renderbuffer.TileSizeY;
                         }
-                        Timing.Occlusion += spinTimer.Ticks - time;
+                        // Timing.Occlusion += spinTimer.Ticks - time;
                         continue;
                         OcclusionTestPassed:;
-                        Timing.Occlusion += spinTimer.Ticks - time;
+                        // Timing.Occlusion += spinTimer.Ticks - time;
                     }
                     
                     ref var node = ref Octree[current.Address];
                     
                     if (current.MaxSize < 1) {
-                        var time = spinTimer.Ticks;
+                        // var time = spinTimer.Ticks;
                         int i = current.MinX + (current.MinY << Buffers.Shift);
                         if (current.Z < Buffers.Depth[i]) {
                             if ((node.Mask == 0) | (MapThreshold > 1)) {
@@ -572,9 +577,10 @@ namespace OctreeSplatting {
                                 }
                             }
                         }
-                        Timing.Pixel += spinTimer.Ticks - time;
+                        Timing.Pixel++;
+                        // Timing.Pixel += spinTimer.Ticks - time;
                     } else if ((node.Mask == 0) | (current.Level >= MaxLevel)) {
-                        var time = spinTimer.Ticks;
+                        // var time = spinTimer.Ticks;
                         if (current.MaxSize > 1) {
                             current.Z += ExtentZ >> current.Level;
                         } else {
@@ -606,9 +612,10 @@ namespace OctreeSplatting {
                                 }
                             }
                         }
-                        Timing.Leaf += spinTimer.Ticks - time;
+                        Timing.Leaf++;
+                        // Timing.Leaf += spinTimer.Ticks - time;
                     } else if (current.MaxSize < MapThreshold) {
-                        var time = spinTimer.Ticks;
+                        // var time = spinTimer.Ticks;
                         int mapStartX = ((current.MinX << SubpixelBits) + SubpixelHalf) - (current.X - (mapHalf >> current.Level));
                         int mapStartY = ((current.MinY << SubpixelBits) + SubpixelHalf) - (current.Y - (mapHalf >> current.Level));
                         int mapShift = MapShift - current.Level;
@@ -648,10 +655,11 @@ namespace OctreeSplatting {
                                 }
                             }
                         }
-                        Timing.Map += spinTimer.Ticks - time;
+                        Timing.Map++;
+                        // Timing.Map += spinTimer.Ticks - time;
                     } else {
                         if (current.MaxSize < MapThreshold8) {
-                            var time = spinTimer.Ticks;
+                            // var time = spinTimer.Ticks;
                             ulong mask8 = 0;
                             for (int octant = 0, mshift = 0; octant < 8; octant++, mshift += 8) {
                                 var octantMask = Octree[node.Address + octant].Mask;
@@ -659,66 +667,97 @@ namespace OctreeSplatting {
                                 mask8 |= ((ulong)octantMask) << mshift;
                             }
                             
-                            int mapStartX = ((current.MinX << SubpixelBits) + SubpixelHalf) - (current.X - (mapHalf >> current.Level));
-                            int mapStartY = ((current.MinY << SubpixelBits) + SubpixelHalf) - (current.Y - (mapHalf >> current.Level));
                             int mapShift = MapShift - current.Level;
                             
-                            int j = current.MinX + (current.MinY << Buffers.Shift);
-                            int jEnd = current.MinX + (current.MaxY << Buffers.Shift);
-                            int iEnd = current.MaxX + (current.MinY << Buffers.Shift);
-                            int jStep = 1 << Buffers.Shift;
-                            
-                            var time2 = spinTimer.Ticks;
-                            Timing.Map8Pre += time2 - time;
-                            
-                            for (int my = mapStartY; j <= jEnd; j += jStep, iEnd += jStep, my += SubpixelSize) {
-                                ulong maskY = MapY8[my >> mapShift] & mask8;
-                                for (int mx = mapStartX, i = j; i <= iEnd; i++, mx += SubpixelSize) {
-                                    ulong mask = MapX8[mx >> mapShift] & maskY;
-                                    
-                                    if ((mask != 0) & (current.Z < Buffers.Depth[i])) {
-                                        var timeW1 = spinTimer.Ticks;
-                                        octant8Bit2.BoolValue = (mask & mask8Bit2) == 0;
-                                        mask &= mask8Bit2 ^ unchecked((ulong)(-octant8Bit2.ByteValue));
-                                        octant8Bit1.BoolValue = (mask & mask8Bit1) == 0;
-                                        mask &= mask8Bit1 ^ unchecked((ulong)(-octant8Bit1.ByteValue));
-                                        octant8Bit0.BoolValue = (mask & mask8Bit0) == 0;
-                                        int queueItem8 = octant8Bit0.ByteValue |
-                                                        (octant8Bit1.ByteValue << 1) |
-                                                        (octant8Bit2.ByteValue << 2);
-                                        var octant8 = (fullQueue >> (queueItem8 << 2)) & 7;
-                                        
-                                        int z = current.Z + (Deltas[octant8].Z >> current.Level);
-                                        
-                                        var timeW2 = spinTimer.Ticks;
-                                        Timing.Map8Select += timeW2 - timeW1;
-                                        
-                                        if (z < Buffers.Depth[i]) {
-                                            var ix = i & bufferRowMask;
-                                            var iy = i >> Buffers.Shift;
-                                            var tx = ix & ~Renderbuffer.TileMaskX;
-                                            var ty = iy & ~Renderbuffer.TileMaskY;
-                                            var txi = ix >> Renderbuffer.TileShiftX;
-                                            var tyi = iy >> Renderbuffer.TileShiftY;
-                                            var ti = txi + (tyi << Buffers.TileShift);
-                                            var pixelMask =
-                                                (stencilX[ix - tx] ^ stencilX[ix - tx + 1]) &
-                                                (stencilY[iy - ty] ^ stencilY[iy - ty + 1]);
-                                            Buffers.Stencil[ti] &= ~pixelMask;
-                                            
-                                            Buffers.Depth[i] = z;
-                                            Buffers.Instance[i] = InstanceIndex;
-                                            Buffers.Address[i] = node.Address + octant8;
-                                        }
-                                        
-                                        Timing.Map8Write += spinTimer.Ticks - timeW2;
-                                    }
-                                }
+                            int mapStartX = ((current.MinX << SubpixelBits) + SubpixelHalf) - (current.X - (mapHalf >> current.Level));
+                            for (int mx = mapStartX, x = current.MinX; x <= current.MaxX; x++, mx += SubpixelSize) {
+                                lMapX8[x-current.MinX] = MapX8[mx >> mapShift];
+                            }
+                            int mapStartY = ((current.MinY << SubpixelBits) + SubpixelHalf) - (current.Y - (mapHalf >> current.Level));
+                            for (int my = mapStartY, y = current.MinY; y <= current.MaxY; y++, my += SubpixelSize) {
+                                lMapY8[y-current.MinY] = MapY8[my >> mapShift] & mask8;
                             }
                             
-                            var time3 = spinTimer.Ticks;
-                            Timing.Map8Loop += time3 - time2;
-                            Timing.Map8 += time3 - time;
+                            // var time2 = spinTimer.Ticks;
+                            // Timing.Map8Pre += time2 - time;
+                            
+                            {
+                                int y = current.MinY;
+                                LoopY:;
+                                if (y > current.MaxY) {
+                                    goto LoopSkip;
+                                }
+                                ulong maskY = lMapY8[y - current.MinY];
+                                int x = current.MinX;
+                                LoopX:;
+                                if (x > current.MaxX) {
+                                    y++;
+                                    goto LoopY;
+                                }
+                                ulong mask = lMapX8[x - current.MinX] & maskY;
+                                int i = x + (y << Buffers.Shift);
+                                if ((mask == 0) | (current.Z >= Buffers.Depth[i])) {
+                                    x++;
+                                    goto LoopX;
+                                }
+                                
+                                // var timeW1 = spinTimer.Ticks;
+                                octant8Bit2.BoolValue = (mask & mask8Bit2) == 0;
+                                mask &= mask8Bit2 ^ unchecked((ulong)(-octant8Bit2.ByteValue));
+                                octant8Bit1.BoolValue = (mask & mask8Bit1) == 0;
+                                mask &= mask8Bit1 ^ unchecked((ulong)(-octant8Bit1.ByteValue));
+                                octant8Bit0.BoolValue = (mask & mask8Bit0) == 0;
+                                int queueItem8 = octant8Bit0.ByteValue |
+                                                (octant8Bit1.ByteValue << 1) |
+                                                (octant8Bit2.ByteValue << 2);
+                                var octant8 = (fullQueue >> (queueItem8 << 2)) & 7;
+                                
+                                int z = current.Z + (Deltas[octant8].Z >> current.Level);
+                                
+                                Timing.Map8Select++;
+                                // var timeW2 = spinTimer.Ticks;
+                                // Timing.Map8Select += timeW2 - timeW1;
+                                
+                                if (z < Buffers.Depth[i]) {
+                                    var ix = i & bufferRowMask;
+                                    var iy = i >> Buffers.Shift;
+                                    var tx = ix & ~Renderbuffer.TileMaskX;
+                                    var ty = iy & ~Renderbuffer.TileMaskY;
+                                    var txi = ix >> Renderbuffer.TileShiftX;
+                                    var tyi = iy >> Renderbuffer.TileShiftY;
+                                    var ti = txi + (tyi << Buffers.TileShift);
+                                    var pixelMask =
+                                        (stencilX[ix - tx] ^ stencilX[ix - tx + 1]) &
+                                        (stencilY[iy - ty] ^ stencilY[iy - ty + 1]);
+                                    Buffers.Stencil[ti] &= ~pixelMask;
+                                    
+                                    Buffers.Depth[i] = z;
+                                    Buffers.Instance[i] = InstanceIndex;
+                                    // Buffers.Address[i] = node.Address + octant8;
+                                    
+                                    var octantMask = Octree[node.Address + octant8].Mask;
+                                    if (octantMask == 0) {
+                                        Buffers.Address[i] = node.Address + octant8;
+                                    } else {
+                                        var address = Octree[node.Address + octant8].Address;
+                                        var octant = ForwardQueues[octantMask].Octants & 7;
+                                        Buffers.Address[i] = address + octant;
+                                    }
+                                    Timing.Map8Write++;
+                                }
+                                
+                                // Timing.Map8Write += spinTimer.Ticks - timeW2;
+                                
+                                x++;
+                                goto LoopX;
+                                
+                                LoopSkip:;
+                            }
+                            
+                            // var time3 = spinTimer.Ticks;
+                            // Timing.Map8Loop += time3 - time2;
+                            // Timing.Map8 += time3 - time;
+                            Timing.Map8++;
                             continue;
                         }
                         
@@ -738,7 +777,7 @@ namespace OctreeSplatting {
                         // }
                         
                         {
-                        var time = spinTimer.Ticks;
+                        // var time = spinTimer.Ticks;
                         
                         var queue = ReverseQueues[node.Mask].Octants;
                         
@@ -783,7 +822,8 @@ namespace OctreeSplatting {
                             stackTop->Level = nextLevel;
                         }
                         
-                        Timing.Stack += spinTimer.Ticks - time;
+                        Timing.Stack++;
+                        // Timing.Stack += spinTimer.Ticks - time;
                         }
                     }
                 }
