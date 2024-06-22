@@ -167,6 +167,10 @@ namespace OctreeSplatting.GodotDemo {
 
 			var delta = mouseSpeed;
 
+			if (Input.IsActionJustPressed("demo_perspective")) {
+				Timing.Accumulate = !Timing.Accumulate;
+			}
+
 			if (Input.IsActionPressed("demo_perspective")) {
 				demoController.Perspective = demoController.Perspective - delta.Y * 0.001f;
 			} else if (Input.IsActionPressed("demo_rotate")) {
