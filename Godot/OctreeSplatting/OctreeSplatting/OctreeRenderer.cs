@@ -34,10 +34,15 @@ namespace OctreeSplatting {
             public int X, Y, Z;
             public uint Address;
         }
+        
+        // For some reason, using bool (or BoolByte) inside a struct
+        // that defines array elements would lead to a crash when
+        // running a Godot build (or at least not rendering anything).
         private struct TileTraceInfo {
             public int Next;
-            public bool UpdateStencil;
-            public bool UpdateDepth;
+            public byte UpdateStencil;
+            public byte UpdateDepth;
+            public byte Pad0, Pad1;
         }
         
         private const int SubpixelBits = 16;
@@ -810,8 +815,8 @@ namespace OctreeSplatting {
                         var tx = fragment->X >> Renderbuffer.TileShiftX;
                         var ty = fragment->Y >> Renderbuffer.TileShiftY;
                         var tileIndex = tx + (ty << Buffers.TileShift);
-                        if (!TraceTiles[tileIndex].UpdateStencil) {
-                            TraceTiles[tileIndex].UpdateStencil = true;
+                        if (TraceTiles[tileIndex].UpdateStencil == 0) {
+                            TraceTiles[tileIndex].UpdateStencil = 1;
                             TraceTiles[tileIndex].Next = -1;
                             if (lastTile < 0) {
                                 firstTile = tileIndex;
@@ -826,7 +831,7 @@ namespace OctreeSplatting {
                             Buffers.Depth[i] = fragment->Z;
                             Buffers.Instance[i] = InstanceIndex;
                             Buffers.Address[i] = fragment->Address;
-                            TraceTiles[tileIndex].UpdateDepth = true;
+                            TraceTiles[tileIndex].UpdateDepth = 1;
                         }
                     }
                     
@@ -840,15 +845,15 @@ namespace OctreeSplatting {
                         
                         var tile = Buffers.Stencil + tileIndex;
                         
-                        if (TraceTiles[tileIndex].UpdateStencil) {
-                            TraceTiles[tileIndex].UpdateStencil = false;
+                        if (TraceTiles[tileIndex].UpdateStencil != 0) {
+                            TraceTiles[tileIndex].UpdateStencil = 0;
                             
                             tile->Scene &= tile->Self;
                             tile->Self = Renderbuffer.StencilClear;
                         }
                         
-                        if (TraceTiles[tileIndex].UpdateDepth) {
-                            TraceTiles[tileIndex].UpdateDepth = false;
+                        if (TraceTiles[tileIndex].UpdateDepth != 0) {
+                            TraceTiles[tileIndex].UpdateDepth = 0;
                             
                             const int FarPlane = Renderbuffer.FarPlane;
                             var maxDepth = -1;
