@@ -199,8 +199,8 @@ namespace OctreeSplatting {
             Delta* deltasPtr = stackalloc Delta[8];
             CalculateDeltas(deltasPtr);
             
-            int mapThreshold8 = (MapThreshold * 3) / 2;
-            // int mapThreshold8 = MapThreshold * 2;
+            // int mapThreshold8 = (MapThreshold * 3) / 2;
+            int mapThreshold8 = MapThreshold * 2;
             bool useMap8 = (mapThreshold8 > MapThreshold);
             
             byte* mapX = stackalloc byte[MapSize];
@@ -686,7 +686,17 @@ namespace OctreeSplatting {
                                         var octant8 = (fullQueue >> (queueItem8 << 2)) & 7;
                                         
                                         f.Z = current.Z + (Deltas[octant8].Z >> current.Level);
-                                        f.Address = node.Address + octant8;
+                                        // f.Address = node.Address + octant8;
+                                        
+                                        var octantMask = Octree[node.Address + octant8].Mask;
+                                        if (octantMask == 0) {
+                                            f.Address = node.Address + octant8;
+                                        } else {
+                                            var address = Octree[node.Address + octant8].Address;
+                                            var octant = ForwardQueues[octantMask].Octants & 7;
+                                            f.Address = address + octant;
+                                        }
+                                        
                                         *(traceFront++) = f;
                                     }
                                 }
