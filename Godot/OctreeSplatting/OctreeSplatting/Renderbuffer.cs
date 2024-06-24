@@ -17,8 +17,8 @@ namespace OctreeSplatting {
 			public ulong* Stencil;
 		}
 		
-		public const int TileShiftX = 2;
-		public const int TileShiftY = 2;
+		public const int TileShiftX = 3;
+		public const int TileShiftY = 3;
 		public const int TileSizeX = 1 << TileShiftX;
 		public const int TileSizeY = 1 << TileShiftY;
 		public const int TileMaskX = TileSizeX - 1;

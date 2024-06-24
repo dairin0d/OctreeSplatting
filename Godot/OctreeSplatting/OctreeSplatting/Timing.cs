@@ -8,10 +8,9 @@ namespace OctreeSplatting {
         public static long Map;
         public static long Map8Pre;
         public static long Map8Loop;
-        public static long Map8Select;
-        public static long Map8Write;
         public static long Map8;
         public static long Occlusion;
+        public static long Write;
         public static long Stack;
         
         public static Stopwatch stopwatch = new Stopwatch();
@@ -23,10 +22,9 @@ namespace OctreeSplatting {
             "Map8: {0:F2}\n",
             "* Map8Pre: {0:F2}\n",
             "* Map8Loop: {0:F2}\n",
-            "* Map8Select: {0:F2}\n",
-            "* Map8Write: {0:F2}\n",
             "Occlusion: {0:F2}\n",
             "Stack: {0:F2}\n",
+            "Write: {0:F2}\n",
             "Total: {0:F2}\n",
         };
         public static double[] Times = new double[Lines.Length];
@@ -43,11 +41,10 @@ namespace OctreeSplatting {
             Map = 0;
             Map8Pre = 0;
             Map8Loop = 0;
-            Map8Select = 0;
-            Map8Write = 0;
             Map8 = 0;
             Occlusion = 0;
             Stack = 0;
+            Write = 0;
             
             stopwatch.Restart();
         }
@@ -58,18 +55,17 @@ namespace OctreeSplatting {
             if (!Accumulate) AccumCount = 0;
             
             var ms = stopwatch.ElapsedMilliseconds;
-            var scale = ms / (double)(Pixel+Leaf+Map+Map8+Occlusion+Stack);
+            var scale = ms / (double)(Pixel+Leaf+Map+Map8+Occlusion+Stack+Write);
             UpdateValue(0, Pixel * scale);
             UpdateValue(1, Leaf * scale);
             UpdateValue(2, Map * scale);
             UpdateValue(3, Map8 * scale);
             UpdateValue(4, Map8Pre * scale);
             UpdateValue(5, Map8Loop * scale);
-            UpdateValue(6, Map8Select * scale);
-            UpdateValue(7, Map8Write * scale);
-            UpdateValue(8, Occlusion * scale);
-            UpdateValue(9, Stack * scale);
-            UpdateValue(10, ms);
+            UpdateValue(6, Occlusion * scale);
+            UpdateValue(7, Stack * scale);
+            UpdateValue(8, Write * scale);
+            UpdateValue(9, ms);
             AccumCount++;
             
             stringBuilder.Clear();
