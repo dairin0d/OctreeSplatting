@@ -34,6 +34,11 @@ namespace OctreeSplatting {
             public int X, Y, Z;
             public uint Address;
         }
+        private struct TileTraceInfo {
+            public int Next;
+            public bool UpdateStencil;
+            public bool UpdateDepth;
+        }
         
         private const int SubpixelBits = 16;
         private const int SubpixelSize = 1 << SubpixelBits;
@@ -82,10 +87,12 @@ namespace OctreeSplatting {
         private int TX, TY, TZ;
         
         private Fragment[] traceBuffer;
+        private TileTraceInfo[] traceTiles;
         
         private UnsafeRef octreeRef;
         private UnsafeRef queuesRef;
         private UnsafeRef traceBufferRef;
+        private UnsafeRef traceTilesRef;
         
         private static SpinTimer spinTimer = new SpinTimer();
         
@@ -101,6 +108,7 @@ namespace OctreeSplatting {
             
             queuesRef.Set(OctantOrder.SparseQueues);
             traceBufferRef.Set(traceBuffer);
+            traceTilesRef.Set(traceTiles);
             
             spinTimer.Reset();
             spinTimer.StartCounter();
@@ -114,6 +122,7 @@ namespace OctreeSplatting {
             octreeRef.Clear();
             queuesRef.Clear();
             traceBufferRef.Clear();
+            traceTilesRef.Clear();
             Lookups.FreePointers();
         }
         
@@ -129,41 +138,47 @@ namespace OctreeSplatting {
             
             var buffers = Renderbuffer.GetBuffers();
             
-            // int j = region.MinX + (region.MinY << buffers.Shift);
-            // int jEnd = region.MinX + (region.MaxY << buffers.Shift);
-            // int iEnd = region.MaxX + (region.MinY << buffers.Shift);
-            // int jStep = 1 << buffers.Shift;
-            // for (; j <= jEnd; j += jStep, iEnd += jStep) {
-            //     for (int i = j; i <= iEnd; i++) {
-            //         if (z < buffers.Depth[i]) return false;
-            //     }
-            //     lastY++;
-            // }
-            
-            var lookupPtrs = Lookups.GetPointers();
-            var stencilX = lookupPtrs.StencilX;
-            var stencilY = lookupPtrs.StencilY;
-            
-            var txMin = region.MinX & ~Renderbuffer.TileMaskX;
-            var txMax = region.MaxX & ~Renderbuffer.TileMaskX;
-            var tyMin = region.MinY & ~Renderbuffer.TileMaskY;
-            var tyMax = region.MaxY & ~Renderbuffer.TileMaskY;
-            {
-                var tileRow = tyMin >> Renderbuffer.TileShiftY;
-                var tileCol = txMin >> Renderbuffer.TileShiftY;
-                for (var ty = tyMin; ty <= tyMax; ty += Renderbuffer.TileSizeY, tileRow++) {
-                    var stencilTile = buffers.Stencil + (tileCol + (tileRow << buffers.TileShift));
-                    for (var tx = txMin; tx <= txMax; tx += Renderbuffer.TileSizeX, stencilTile++) {
-                        var pixelMask = stencilTile[0] &
-                            (stencilX[region.MinX - tx] ^ stencilX[region.MaxX - tx + 1]) &
-                            (stencilY[region.MinY - ty] ^ stencilY[region.MaxY - ty + 1]);
-                        if (pixelMask != 0) return false;
-                    }
-                    lastY = ty + Renderbuffer.TileSizeY;
+            int j = region.MinX + (region.MinY << buffers.Shift);
+            int jEnd = region.MinX + (region.MaxY << buffers.Shift);
+            int iEnd = region.MaxX + (region.MinY << buffers.Shift);
+            int jStep = 1 << buffers.Shift;
+            for (; j <= jEnd; j += jStep, iEnd += jStep) {
+                for (int i = j; i <= iEnd; i++) {
+                    if (z < buffers.Depth[i]) return false;
                 }
+                lastY++;
             }
             
             return true;
+            
+            // For models that occupy a small amount of screen-space,
+            // this might be less effective than per-pixel depth test
+            
+            // var lookupPtrs = Lookups.GetPointers();
+            // var stencilX = lookupPtrs.StencilX;
+            // var stencilY = lookupPtrs.StencilY;
+            
+            // var txMin = region.MinX & ~Renderbuffer.TileMaskX;
+            // var txMax = region.MaxX & ~Renderbuffer.TileMaskX;
+            // var tyMin = region.MinY & ~Renderbuffer.TileMaskY;
+            // var tyMax = region.MaxY & ~Renderbuffer.TileMaskY;
+            // {
+            //     var tileRow = tyMin >> Renderbuffer.TileShiftY;
+            //     var tileCol = txMin >> Renderbuffer.TileShiftY;
+            //     for (var ty = tyMin; ty <= tyMax; ty += Renderbuffer.TileSizeY, tileRow++) {
+            //         var tile = buffers.Stencil + (tileCol + (tileRow << buffers.TileShift));
+            //         for (var tx = txMin; tx <= txMax; tx += Renderbuffer.TileSizeX, tile++) {
+            //             if (z < tile->Depth) return false;
+            //             var pixelMask = tile->Scene &
+            //                 (stencilX[region.MinX - tx] ^ stencilX[region.MaxX - tx + 1]) &
+            //                 (stencilY[region.MinY - ty] ^ stencilY[region.MaxY - ty + 1]);
+            //             if (pixelMask != 0) return false;
+            //         }
+            //         lastY = ty + Renderbuffer.TileSizeY;
+            //     }
+            // }
+            
+            // return true;
         }
         
         public unsafe Result Render() {
@@ -218,11 +233,14 @@ namespace OctreeSplatting {
             };
             Renderbuffer.AddInstanceInfo(instanceInfo);
             
+            Renderbuffer.GetTileBufferInfo(out var tileShift, out var tileArea);
+            
             var buffers = Renderbuffer.GetBuffers();
             
             var octreePtr = (OctreeNode*)octreeRef;
             var queuesPtr = (OctantOrder.Queue*)queuesRef;
             var traceBufferPtr = (Fragment*)traceBufferRef;
+            var traceTilesPtr = (TileTraceInfo*)traceTilesRef;
             {
                 var unsafeRenderer = new OctreeRendererUnsafe {
                     Viewport = Viewport,
@@ -241,6 +259,7 @@ namespace OctreeSplatting {
                     ReverseQueues = queuesPtr + reverseKey,
                     
                     TraceBuffer = traceBufferPtr,
+                    TraceTiles = traceTilesPtr,
                     
                     MapX = mapX,
                     MapY = mapY,
@@ -281,6 +300,9 @@ namespace OctreeSplatting {
             while (traceBufferSize < viewportArea) traceBufferSize *= 2;
             
             traceBuffer = new Fragment[traceBufferSize];
+            
+            Renderbuffer.GetTileBufferInfo(out var tileShift, out var tileArea);
+            traceTiles = new TileTraceInfo[tileArea];
         }
         
         private int CalculateMaxLevel() {
@@ -470,6 +492,7 @@ namespace OctreeSplatting {
             public OctantOrder.Queue* ReverseQueues;
             
             public Fragment* TraceBuffer;
+            public TileTraceInfo* TraceTiles;
             
             public byte* MapX;
             public byte* MapY;
@@ -538,11 +561,13 @@ namespace OctreeSplatting {
                         var tileRow = tyMin >> Renderbuffer.TileShiftY;
                         var tileCol = txMin >> Renderbuffer.TileShiftX;
                         for (var ty = tyMin; ty <= tyMax; ty += Renderbuffer.TileSizeY, tileRow++) {
-                            var stencilTile = tileCol + (tileRow << Buffers.TileShift);
-                            for (var tx = txMin; tx <= txMax; tx += Renderbuffer.TileSizeX, stencilTile++) {
-                                var pixelMask = Buffers.Stencil[stencilTile] &
+                            var tile = Buffers.Stencil + (tileCol + (tileRow << Buffers.TileShift));
+                            for (var tx = txMin; tx <= txMax; tx += Renderbuffer.TileSizeX, tile++) {
+                                var pixelMask = tile->Self &
                                     (stencilX[current.MinX - tx] ^ stencilX[current.MaxX - tx + 1]) &
                                     (stencilY[current.MinY - ty] ^ stencilY[current.MaxY - ty + 1]);
+                                // This is apparently faster here than masking by delta-depth sign
+                                if (current.Z >= tile->Depth) pixelMask &= tile->Scene;
                                 if (pixelMask != 0) goto OcclusionTestPassed;
                             }
                             current.MinY = ty + Renderbuffer.TileSizeY;
@@ -568,7 +593,7 @@ namespace OctreeSplatting {
                             f.Y = current.MinY;
                             var stencilIndex = (f.X >> TSX) + ((f.Y >> TSY) << Buffers.TileShift);
                             var stencilMask = 1UL << ((f.X & TMX) + ((f.Y & TMY) << TSX));
-                            Buffers.Stencil[stencilIndex] &= ~stencilMask;
+                            Buffers.Stencil[stencilIndex].Self &= ~stencilMask;
                             
                             f.Z = current.Z;
                             f.Address = current.Address;
@@ -584,7 +609,7 @@ namespace OctreeSplatting {
                                 f.Y = current.MinY;
                                 var stencilIndex = (f.X >> TSX) + ((f.Y >> TSY) << Buffers.TileShift);
                                 var stencilMask = 1UL << ((f.X & TMX) + ((f.Y & TMY) << TSX));
-                                Buffers.Stencil[stencilIndex] &= ~stencilMask;
+                                Buffers.Stencil[stencilIndex].Self &= ~stencilMask;
                                 
                                 var octant = ForwardQueues[mask].Octants & 7;
                                 f.Z = current.Z + (Deltas[octant].Z >> current.Level);
@@ -609,8 +634,8 @@ namespace OctreeSplatting {
                             for (f.X = current.MinX; f.X <= current.MaxX; f.X++) {
                                 var stencilIndex = (f.X >> TSX) + ((f.Y >> TSY) << Buffers.TileShift);
                                 var stencilMask = 1UL << ((f.X & TMX) + ((f.Y & TMY) << TSX));
-                                if ((Buffers.Stencil[stencilIndex] & stencilMask) != 0) {
-                                    Buffers.Stencil[stencilIndex] &= ~stencilMask;
+                                if ((Buffers.Stencil[stencilIndex].Self & stencilMask) != 0) {
+                                    Buffers.Stencil[stencilIndex].Self &= ~stencilMask;
                                     *(traceFront++) = f;
                                 }
                             }
@@ -633,8 +658,8 @@ namespace OctreeSplatting {
                                 
                                 var stencilIndex = (f.X >> TSX) + ((f.Y >> TSY) << Buffers.TileShift);
                                 var stencilMask = 1UL << ((f.X & TMX) + ((f.Y & TMY) << TSX));
-                                if ((Buffers.Stencil[stencilIndex] & stencilMask) != 0) {
-                                    Buffers.Stencil[stencilIndex] &= ~stencilMask;
+                                if ((Buffers.Stencil[stencilIndex].Self & stencilMask) != 0) {
+                                    Buffers.Stencil[stencilIndex].Self &= ~stencilMask;
                                     
                                     var octant = ForwardQueues[mask].Octants & 7;
                                     f.Z = current.Z + (Deltas[octant].Z >> current.Level);
@@ -672,8 +697,8 @@ namespace OctreeSplatting {
                                     
                                     var stencilIndex = (f.X >> TSX) + ((f.Y >> TSY) << Buffers.TileShift);
                                     var stencilMask = 1UL << ((f.X & TMX) + ((f.Y & TMY) << TSX));
-                                    if ((Buffers.Stencil[stencilIndex] & stencilMask) != 0) {
-                                        Buffers.Stencil[stencilIndex] &= ~stencilMask;
+                                    if ((Buffers.Stencil[stencilIndex].Self & stencilMask) != 0) {
+                                        Buffers.Stencil[stencilIndex].Self &= ~stencilMask;
                                         
                                         octant8Bit2.BoolValue = (mask & mask8Bit2) == 0;
                                         mask &= mask8Bit2 ^ unchecked((ulong)(-octant8Bit2.ByteValue));
@@ -777,12 +802,71 @@ namespace OctreeSplatting {
                 {
                     var time = spinTimer.Ticks;
                     
+                    var firstTile = -1;
+                    var lastTile = -1;
+                    
                     for (var fragment = TraceBuffer; fragment != traceFront; fragment++) {
+                        // We need to clear self-stencil even if fragments are rejected by depth
+                        var tx = fragment->X >> Renderbuffer.TileShiftX;
+                        var ty = fragment->Y >> Renderbuffer.TileShiftY;
+                        var tileIndex = tx + (ty << Buffers.TileShift);
+                        if (!TraceTiles[tileIndex].UpdateStencil) {
+                            TraceTiles[tileIndex].UpdateStencil = true;
+                            TraceTiles[tileIndex].Next = -1;
+                            if (lastTile < 0) {
+                                firstTile = tileIndex;
+                            } else {
+                                TraceTiles[lastTile].Next = tileIndex;
+                            }
+                            lastTile = tileIndex;
+                        }
+                        
                         int i = fragment->X + (fragment->Y << Buffers.Shift);
                         if (fragment->Z < Buffers.Depth[i]) {
                             Buffers.Depth[i] = fragment->Z;
                             Buffers.Instance[i] = InstanceIndex;
                             Buffers.Address[i] = fragment->Address;
+                            TraceTiles[tileIndex].UpdateDepth = true;
+                        }
+                    }
+                    
+                    var tileRowMask = (1 << Buffers.TileShift) - 1;
+                    
+                    var nextTile = firstTile;
+                    while (nextTile >= 0) {
+                        var tileIndex = nextTile;
+                        nextTile = TraceTiles[tileIndex].Next;
+                        TraceTiles[tileIndex].Next = -1;
+                        
+                        var tile = Buffers.Stencil + tileIndex;
+                        
+                        if (TraceTiles[tileIndex].UpdateStencil) {
+                            TraceTiles[tileIndex].UpdateStencil = false;
+                            
+                            tile->Scene &= tile->Self;
+                            tile->Self = Renderbuffer.StencilClear;
+                        }
+                        
+                        if (TraceTiles[tileIndex].UpdateDepth) {
+                            TraceTiles[tileIndex].UpdateDepth = false;
+                            
+                            const int FarPlane = Renderbuffer.FarPlane;
+                            var maxDepth = -1;
+                            var txMin = (tileIndex & tileRowMask) << Renderbuffer.TileShiftX;
+                            var tyMin = (tileIndex >> Buffers.TileShift) << Renderbuffer.TileShiftY;
+                            var tyMax = tyMin + Renderbuffer.TileSizeY;
+                            for (var y = tyMin; y < tyMax; y++) {
+                                var iMin = txMin + (y << Buffers.Shift);
+                                var iMax = iMin + Renderbuffer.TileSizeX;
+                                for (var i = iMin; i < iMax; i++) {
+                                    if ((Buffers.Depth[i] < FarPlane) & (Buffers.Depth[i] > maxDepth)) {
+                                        maxDepth = Buffers.Depth[i];
+                                    }
+                                }
+                            }
+                            if (maxDepth >= 0) {
+                                tile->Depth = maxDepth;
+                            }
                         }
                     }
                     

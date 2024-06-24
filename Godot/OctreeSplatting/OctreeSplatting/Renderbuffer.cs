@@ -3,6 +3,13 @@
 
 namespace OctreeSplatting {
 	public class Renderbuffer {
+		public struct StencilData {
+			public ulong Self;
+			public ulong Scene;
+			public int Depth;
+			public int Pad0;
+		}
+		
 		public unsafe struct Pointers {
 			public int Shift;
 			public int SizeX;
@@ -14,7 +21,7 @@ namespace OctreeSplatting {
 			public int* Depth;
 			public uint* Address;
 			public uint* Instance;
-			public ulong* Stencil;
+			public StencilData* Stencil;
 		}
 		
 		public const int TileShiftX = 3;
@@ -27,6 +34,7 @@ namespace OctreeSplatting {
 		public const ulong StencilClear = ulong.MaxValue >> (64 - TileArea);
 		
 		public const int DepthBits = 24;
+		public const int FarPlane = 1 << DepthBits;
 		
 		private int sizeX, sizeY, shiftX;
 		private int tilesX, tilesY, tileShiftX;
@@ -40,7 +48,9 @@ namespace OctreeSplatting {
 		
 		public int SizeX => sizeX;
 		public int SizeY => sizeY;
-		public int SizeZ => 1 << DepthBits;
+		public int SizeZ => FarPlane;
+		public int TilesX => tilesX;
+		public int TilesY => tilesY;
 		public Color32[] ColorPixels => finalPixels;
 		public uint InstanceCount => instanceCount;
 		
@@ -51,7 +61,7 @@ namespace OctreeSplatting {
 		
 		public bool UseTemporalUpscaling;
 		
-		public void Resize(int width, int height) {
+		public unsafe void Resize(int width, int height) {
 			if ((width <= 0) | (height <= 0)) return;
 			if ((width == sizeX) & (height == sizeY)) return;
 			
@@ -67,7 +77,7 @@ namespace OctreeSplatting {
 			
 			var tileArea = (1 << tileShiftX) * tilesY;
 			var pixelArea = (1 << shiftX) * sizeY;
-			data = new byte[sizeof(ulong) * tileArea + 3 * sizeof(int) * pixelArea];
+			data = new byte[sizeof(StencilData) * tileArea + 3 * sizeof(int) * pixelArea];
 			
 			finalPixels = new Color32[sizeX * sizeY];
 			colorHistory = new Color32[finalPixels.Length];
@@ -89,14 +99,16 @@ namespace OctreeSplatting {
 				for (var tx = tiles.MinX; tx <= tiles.MaxX; tx++) {
 					// TODO: mask the parts that are outside of the viewport
 					var tileIndex = tx | (ty << buffers.TileShift);
-					buffers.Stencil[tileIndex] = StencilClear;
+					buffers.Stencil[tileIndex].Self = StencilClear;
+					buffers.Stencil[tileIndex].Scene = StencilClear;
+					buffers.Stencil[tileIndex].Depth = FarPlane;
 				}
 			}
 			
 			for (int y = 0; y < buffers.SizeY; y++) {
 				int dataIndex = y << buffers.Shift;
 				for (int x = 0; x < buffers.SizeX; x++, dataIndex++) {
-					buffers.Depth[dataIndex] = buffers.SizeZ;
+					buffers.Depth[dataIndex] = FarPlane;
 					buffers.Address[dataIndex] = uint.MaxValue;
 					buffers.Instance[dataIndex] = uint.MaxValue;
 				}
@@ -111,12 +123,17 @@ namespace OctreeSplatting {
 			instanceCount++;
 		}
 		
+		public void GetTileBufferInfo(out int shift, out int area) {
+			shift = tileShiftX;
+			area = (1 << tileShiftX) * tilesY;
+		}
+		
 		public unsafe Pointers GetBuffers() {
 			var buffers = new Pointers {
 				Shift = shiftX,
 				SizeX = sizeX,
 				SizeY = sizeY,
-				SizeZ = 1 << DepthBits,
+				SizeZ = FarPlane,
 				TileShift = tileShiftX,
 				TilesX = tilesX,
 				TilesY = tilesY,
@@ -125,8 +142,8 @@ namespace OctreeSplatting {
 			var dataPtr = (byte*)dataRef;
 			var tileArea = (1 << tileShiftX) * tilesY;
 			var pixelArea = (1 << shiftX) * sizeY;
-			buffers.Stencil = (ulong*)dataPtr;
-			dataPtr += sizeof(ulong) * tileArea;
+			buffers.Stencil = (StencilData*)dataPtr;
+			dataPtr += sizeof(StencilData) * tileArea;
 			buffers.Depth = (int*)dataPtr;
 			dataPtr += sizeof(int) * pixelArea;
 			buffers.Address = (uint*)dataPtr;
