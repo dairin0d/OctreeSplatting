@@ -24,6 +24,7 @@ namespace OctreeSplatting {
 		public const int TileMaskX = TileSizeX - 1;
 		public const int TileMaskY = TileSizeY - 1;
 		public const int TileArea = TileSizeX * TileSizeY;
+		public const ulong StencilClear = ulong.MaxValue >> (64 - TileArea);
 		
 		public const int DepthBits = 24;
 		
@@ -83,14 +84,12 @@ namespace OctreeSplatting {
 			
 			var buffers = GetBuffers();
 			
-			var stencilClear = (TileArea < 64 ? (1 << TileArea) - 1 : ulong.MaxValue);
-			
 			var tiles = ToTiles(new Range2D {MaxX = sizeX - 1, MaxY = sizeY - 1});
 			for (var ty = tiles.MinY; ty <= tiles.MaxY; ty++) {
 				for (var tx = tiles.MinX; tx <= tiles.MaxX; tx++) {
 					// TODO: mask the parts that are outside of the viewport
 					var tileIndex = tx | (ty << buffers.TileShift);
-					buffers.Stencil[tileIndex] = stencilClear;
+					buffers.Stencil[tileIndex] = StencilClear;
 				}
 			}
 			
@@ -162,10 +161,10 @@ namespace OctreeSplatting {
 						if (instance < instanceCount) {
 							var instanceInfo = instanceInfos[instance];
 							var address = buffers.Address[dataIndex];
-                            if (address < instanceInfo.Octree.Length) {
+							if (address < instanceInfo.Octree.Length) {
 								color.RGB = instanceInfo.Octree[address].Data;
 								color.A = 255;
-                            }
+							}
 						}
 						
 						if (UseTemporalUpscaling) {
