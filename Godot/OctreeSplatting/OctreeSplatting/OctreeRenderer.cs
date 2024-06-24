@@ -169,14 +169,14 @@ namespace OctreeSplatting {
         public unsafe Result Render() {
             DrawnPixels = 0;
             
-            int maxLevel = CalculateMaxLevel();
+            var maxLevel = CalculateMaxLevel();
             if (maxLevel < 0) return Result.TooBig;
             
             CalculateIntMatrix(maxLevel);
             
             CalculateRootInfo();
             
-            int dilation = (int)(Math.Max(AbsoluteDilation, 0) * SubpixelSize);
+            var dilation = (int)(Math.Max(AbsoluteDilation, 0) * SubpixelSize);
             dilation += (int)(Math.Min(Math.Max(RelativeDilation, 0), 1) * Math.Max(extentX, extentY));
             
             // Trying to support dilated cubes is quite troublesome.
@@ -189,25 +189,25 @@ namespace OctreeSplatting {
             if ((rootInfo.MaxX < rootInfo.MinX) | (rootInfo.MaxY < rootInfo.MinY)) return Result.Culled;
             
             var queues = OctantOrder.SparseQueues;
-            int forwardKey = OctantOrder.Key(in Matrix);
-            int reverseKey = forwardKey ^ 0b11100000000;
+            var forwardKey = OctantOrder.Key(in Matrix);
+            var reverseKey = forwardKey ^ 0b11100000000;
             
-            StackItem* nodeStackPtr = stackalloc StackItem[MaxSubdivisions * 8];
+            var nodeStackPtr = stackalloc StackItem[MaxSubdivisions * 8];
             
             nodeStackPtr[0] = rootInfo;
             
-            Delta* deltasPtr = stackalloc Delta[8];
+            var deltasPtr = stackalloc Delta[8];
             CalculateDeltas(deltasPtr);
             
-            // int mapThreshold8 = (MapThreshold * 3) / 2;
-            int mapThreshold8 = MapThreshold * 2;
-            bool useMap8 = (mapThreshold8 > MapThreshold);
+            // var mapThreshold8 = (MapThreshold * 3) / 2;
+            var mapThreshold8 = MapThreshold * 2;
+            var useMap8 = (mapThreshold8 > MapThreshold);
             
-            byte* mapX = stackalloc byte[MapSize];
-            byte* mapY = stackalloc byte[MapSize];
-            ulong* mapX8 = stackalloc ulong[MapSize];
-            ulong* mapY8 = stackalloc ulong[MapSize];
-            int mapShift = CalculateMaps(deltasPtr, mapX, mapY, mapX8, mapY8, useMap8);
+            var mapX = stackalloc byte[MapSize];
+            var mapY = stackalloc byte[MapSize];
+            var mapX8 = stackalloc ulong[MapSize];
+            var mapY8 = stackalloc ulong[MapSize];
+            var mapShift = CalculateMaps(deltasPtr, mapX, mapY, mapX8, mapY8, useMap8);
             
             octreeRef.Set(Octree);
             
@@ -435,7 +435,7 @@ namespace OctreeSplatting {
                         int subMaxX = (subNodeX + subNodeExtentX) >> mapShift;
                         int subMaxY = (subNodeY + subNodeExtentY) >> mapShift;
                         
-                        ulong subMask = ((ulong)1 << subOctant) << (octant * 8);
+                        var subMask = ((ulong)1 << subOctant) << (octant * 8);
                         
                         for (int x = subMinX; x <= subMaxX; x++) {
                             mapX8[x] |= subMask;
@@ -504,7 +504,7 @@ namespace OctreeSplatting {
                 mask8Bit1 = 0;
                 mask8Bit2 = 0;
                 for (uint item = 0, queue = fullQueue; item < 8; item++, queue >>= 4) {
-                    ulong octantMask = (ulong)255 << (int)((queue & 7) * 8);
+                    var octantMask = (ulong)255 << (int)((queue & 7) * 8);
                     if ((item & 1) == 0) mask8Bit0 |= octantMask;
                     if ((item & 2) == 0) mask8Bit1 |= octantMask;
                     if ((item & 4) == 0) mask8Bit2 |= octantMask;
@@ -664,9 +664,9 @@ namespace OctreeSplatting {
                             
                             int my, mx;
                             for (my = mapStartY, f.Y = current.MinY; f.Y <= current.MaxY; f.Y++, my += SubpixelSize) {
-                                ulong maskY = MapY8[my >> mapShift] & mask8;
+                                var maskY = MapY8[my >> mapShift] & mask8;
                                 for (mx = mapStartX, f.X = current.MinX; f.X <= current.MaxX; f.X++, mx += SubpixelSize) {
-                                    ulong mask = MapX8[mx >> mapShift] & maskY;
+                                    var mask = MapX8[mx >> mapShift] & maskY;
                                     
                                     if (mask == 0) continue;
                                     
