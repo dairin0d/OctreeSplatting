@@ -502,11 +502,11 @@ namespace OctreeSplatting {
                         var tyMin = current.MinY & ~Renderbuffer.TileMaskY;
                         var tyMax = current.MaxY & ~Renderbuffer.TileMaskY;
                         var tileRow = tyMin >> Renderbuffer.TileShiftY;
-                        var tileCol = txMin >> Renderbuffer.TileShiftY;
+                        var tileCol = txMin >> Renderbuffer.TileShiftX;
                         for (var ty = tyMin; ty <= tyMax; ty += Renderbuffer.TileSizeY, tileRow++) {
-                            var stencilTile = Buffers.Stencil + (tileCol + (tileRow << Buffers.TileShift));
+                            var stencilTile = tileCol + (tileRow << Buffers.TileShift);
                             for (var tx = txMin; tx <= txMax; tx += Renderbuffer.TileSizeX, stencilTile++) {
-                                var pixelMask = stencilTile[0] &
+                                var pixelMask = Buffers.Stencil[stencilTile] &
                                     (stencilX[current.MinX - tx] ^ stencilX[current.MaxX - tx + 1]) &
                                     (stencilY[current.MinY - ty] ^ stencilY[current.MaxY - ty + 1]);
                                 if (pixelMask != 0) goto OcclusionTestPassed;

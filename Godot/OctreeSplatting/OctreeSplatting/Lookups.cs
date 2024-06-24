@@ -21,8 +21,16 @@ namespace OctreeSplatting {
         private static UnsafeRef refStencilY;
         
         static Lookups() {
-            StencilX = MakeStencil(Renderbuffer.TileSizeX, 0x0101010101010101UL, 1);
-            StencilY = MakeStencil(Renderbuffer.TileSizeY, 0xFFUL, 8);
+            if (Renderbuffer.TileShiftX == 2) {
+                StencilX = MakeStencil(Renderbuffer.TileSizeX, 0x1111UL, 1);
+            } else {
+                StencilX = MakeStencil(Renderbuffer.TileSizeX, 0x0101010101010101UL, 1);
+            }
+            if (Renderbuffer.TileShiftY == 2) {
+                StencilY = MakeStencil(Renderbuffer.TileSizeY, 0xFUL, 4);
+            } else {
+                StencilY = MakeStencil(Renderbuffer.TileSizeY, 0xFFUL, 8);
+            }
         }
         
         public static unsafe Pointers GetPointers() {
