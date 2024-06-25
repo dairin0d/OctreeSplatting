@@ -14,7 +14,6 @@ namespace OctreeSplatting {
         private struct StackItem {
             public ProjectedVertex[] Grid;
             public T Data;
-            public uint Order;
             public uint Queue;
             public byte Mask;
         }
@@ -121,17 +120,24 @@ namespace OctreeSplatting {
         }
         
         public void Subdivide(ProjectedVertex[] cage, T rootData, byte mask, System.Func<State, byte> callback) {
+            bool isPerspective = (ZSlope > 1e-16f) | (ZSlope < -1e-16f);
+            var eyeZ = -ZIntercept / ZSlope;
+            float minZ = 0;
+            
             int level = 0;
             ref var stackItem = ref stack[level];
             stackItem.Mask = mask;
             stackItem.Data = rootData;
-            stackItem.Order = OctantOrder.SparseQueues[255].Octants;
+            minZ = float.MaxValue;
             for (int i = 0; i < 8; i++) {
-                stackItem.Grid[GridCornerIndices[i]] = cage[i];
+                var corner = GridCornerIndices[i];
+                stackItem.Grid[corner] = cage[i];
+                if (stackItem.Grid[corner].Position.Z < minZ) {
+                    minZ = stackItem.Grid[corner].Position.Z;
+                }
             }
-            Sort(ref stackItem);
-            stackItem.Queue = stackItem.Order;
             Subdivide(stackItem.Grid, ZIntercept, ZSlope);
+            stackItem.Queue = CalculateQueue(stackItem.Grid, isPerspective, eyeZ, minZ);
             
             while (level >= 0) {
                 stackItem = ref stack[level];
@@ -153,46 +159,24 @@ namespace OctreeSplatting {
                     mask = callback(state);
                     
                     if ((mask != 0) & (level < (MaxSubdivisions - 1))) {
-                        var order = stackItem.Order;
                         level++;
                         stackItem = ref stack[level];
                         stackItem.Mask = mask;
                         stackItem.Data = state.Data;
-                        stackItem.Order = order;
+                        minZ = float.MaxValue;
                         for (int i = 0; i < 8; i++) {
-                            stackItem.Grid[GridCornerIndices[i]] = state.Grid[state.Indices[i]];
+                            var corner = GridCornerIndices[i];
+                            stackItem.Grid[corner] = state.Grid[state.Indices[i]];
+                            if (stackItem.Grid[corner].Position.Z < minZ) {
+                                minZ = stackItem.Grid[corner].Position.Z;
+                            }
                         }
-                        Sort(ref stackItem);
-                        stackItem.Queue = stackItem.Order;
                         Subdivide(stackItem.Grid, ZIntercept, ZSlope);
+                        stackItem.Queue = CalculateQueue(stackItem.Grid, isPerspective, eyeZ, minZ);
                     }
                 }
                 
                 level--;
-            }
-        }
-        
-        private static void Sort(ref StackItem stackItem) {
-            // Insertion sort
-            for (int i = 4; i < 32; i += 4) {
-                var queueItem = stackItem.Order >> i;
-                var z = stackItem.Grid[GridCornerIndices[queueItem & 7]].Position.Z;
-                
-                int iNew = i;
-                for (int i2 = i - 4; i2 >= 0; i2 -= 4) {
-                    var queueItem2 = stackItem.Order >> i2;
-                    var z2 = stackItem.Grid[GridCornerIndices[queueItem2 & 7]].Position.Z;
-                    if (z > z2) break;
-                    iNew -= 4;
-                }
-                
-                if (iNew != i) {
-                    int offset = i - iNew;
-                    var affectedBits = (uint.MaxValue >> (28 - i)) & (uint.MaxValue << iNew);
-                    var movedBits = affectedBits & (affectedBits >> 4);
-                    stackItem.Order = (stackItem.Order & ~affectedBits) |
-                        ((stackItem.Order & movedBits) << 4) | ((queueItem & 15) << iNew);
-                }
             }
         }
         
@@ -213,5 +197,48 @@ namespace OctreeSplatting {
                 midpoint.Projection.Y = midpoint.Position.Y * scale;
             }
         }
+        
+        private static uint CalculateQueue(ProjectedVertex[] grid, bool isPerspective, float eyeZ, float minZ) {
+            var startingOctant = (isPerspective & (minZ < 0))
+                ? CalculateStartingOctantPerspective(grid, eyeZ)
+                : CalculateStartingOctant(grid);
+            return OctantOrder.SparseQueues[(startingOctant << 8) | 255].Octants;
+        }
+        
+        private static int CalculateStartingOctant(ProjectedVertex[] grid) {
+            float xx = grid[2*1+1*3+1*9].Projection.X - grid[1*1+1*3+1*9].Projection.X;
+            float xy = grid[2*1+1*3+1*9].Projection.Y - grid[1*1+1*3+1*9].Projection.Y;
+            float yx = grid[1*1+2*3+1*9].Projection.X - grid[1*1+1*3+1*9].Projection.X;
+            float yy = grid[1*1+2*3+1*9].Projection.Y - grid[1*1+1*3+1*9].Projection.Y;
+            float zx = grid[1*1+1*3+2*9].Projection.X - grid[1*1+1*3+1*9].Projection.X;
+            float zy = grid[1*1+1*3+2*9].Projection.Y - grid[1*1+1*3+1*9].Projection.Y;
+            int bitX = (yy * zx <= yx * zy ? 0 : 1);
+            int bitY = (zy * xx <= zx * xy ? 0 : 2);
+            int bitZ = (xy * yx <= xx * yy ? 0 : 4);
+            return bitX | bitY | bitZ;
+        }
+        
+        private static int CalculateStartingOctantPerspective(ProjectedVertex[] grid, float eyeZ) {
+            float px = 0 - grid[1*1+1*3+1*9].Position.X;
+            float py = 0 - grid[1*1+1*3+1*9].Position.Y;
+            float pz = eyeZ - grid[1*1+1*3+1*9].Position.Z;
+            float xx = grid[2*1+1*3+1*9].Position.X - grid[1*1+1*3+1*9].Position.X;
+            float xy = grid[2*1+1*3+1*9].Position.Y - grid[1*1+1*3+1*9].Position.Y;
+            float xz = grid[2*1+1*3+1*9].Position.Z - grid[1*1+1*3+1*9].Position.Z;
+            float yx = grid[1*1+2*3+1*9].Position.X - grid[1*1+1*3+1*9].Position.X;
+            float yy = grid[1*1+2*3+1*9].Position.Y - grid[1*1+1*3+1*9].Position.Y;
+            float yz = grid[1*1+2*3+1*9].Position.Z - grid[1*1+1*3+1*9].Position.Z;
+            float zx = grid[1*1+1*3+2*9].Position.X - grid[1*1+1*3+1*9].Position.X;
+            float zy = grid[1*1+1*3+2*9].Position.Y - grid[1*1+1*3+1*9].Position.Y;
+            float zz = grid[1*1+1*3+2*9].Position.Z - grid[1*1+1*3+1*9].Position.Z;
+            float dotX = (yy*zz - yz*zy)*px + (yz*zx - yx*zz)*py + (yx*zy - yy*zx)*pz;
+            float dotY = (zy*xz - zz*xy)*px + (zz*xx - zx*xz)*py + (zx*xy - zy*xx)*pz;
+            float dotZ = (xy*yz - xz*yy)*px + (xz*yx - xx*yz)*py + (xx*yy - xy*yx)*pz;
+            int bitX = (dotX <= 0 ? 0 : 1);
+            int bitY = (dotY <= 0 ? 0 : 2);
+            int bitZ = (dotZ <= 0 ? 0 : 4);
+            return bitX | bitY | bitZ;
+        }
+        
     }
 }
