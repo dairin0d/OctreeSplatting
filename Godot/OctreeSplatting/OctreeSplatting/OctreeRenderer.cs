@@ -807,6 +807,8 @@ namespace OctreeSplatting {
                 {
                     var time = spinTimer.Ticks;
                     
+                    const int FarPlane = Renderbuffer.FarPlane;
+                    
                     var firstTile = -1;
                     var lastTile = -1;
                     
@@ -827,11 +829,22 @@ namespace OctreeSplatting {
                         }
                         
                         int i = fragment->X + (fragment->Y << Buffers.Shift);
+                        
                         if (fragment->Z < Buffers.Depth[i]) {
+                            // Skip max depth recalculation if the pixel
+                            // we're about to overwrite was at far plane
+                            if (Buffers.Depth[i] == FarPlane) {
+                                var tile = Buffers.Stencil + tileIndex;
+                                if ((tile->Depth == FarPlane) | (fragment->Z > tile->Depth)) {
+                                    tile->Depth = fragment->Z;
+                                }
+                            } else {
+                                TraceTiles[tileIndex].UpdateDepth = 1;
+                            }
+                            
                             Buffers.Depth[i] = fragment->Z;
                             Buffers.Instance[i] = InstanceIndex;
                             Buffers.Address[i] = fragment->Address;
-                            TraceTiles[tileIndex].UpdateDepth = 1;
                         }
                     }
                     
@@ -855,7 +868,6 @@ namespace OctreeSplatting {
                         if (TraceTiles[tileIndex].UpdateDepth != 0) {
                             TraceTiles[tileIndex].UpdateDepth = 0;
                             
-                            const int FarPlane = Renderbuffer.FarPlane;
                             var maxDepth = -1;
                             var txMin = (tileIndex & tileRowMask) << Renderbuffer.TileShiftX;
                             var tyMin = (tileIndex >> Buffers.TileShift) << Renderbuffer.TileShiftY;
