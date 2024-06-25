@@ -55,7 +55,8 @@ namespace OctreeSplatting {
             if (!Accumulate) AccumCount = 0;
             
             var ms = stopwatch.ElapsedMilliseconds;
-            var scale = ms / (double)(Pixel+Leaf+Map+Map8+Occlusion+Stack+Write);
+            var total = Pixel+Leaf+Map+Map8+Occlusion+Stack+Write;
+            var scale = ms / (double)(System.Math.Max(total, 1));
             UpdateValue(0, Pixel * scale);
             UpdateValue(1, Leaf * scale);
             UpdateValue(2, Map * scale);

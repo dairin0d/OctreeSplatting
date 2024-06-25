@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: 2021 dairin0d https://github.com/dairin0d
 
-// #define USE_PROFILING
+#define USE_PROFILING
 
 using System;
 using System.Numerics;
@@ -35,6 +35,7 @@ namespace OctreeSplatting {
         private struct Fragment {
             public int X, Y, Z;
             public uint Address;
+            public Color32 Color;
         }
         
         // For some reason, using bool (or BoolByte) inside a struct
@@ -568,6 +569,7 @@ namespace OctreeSplatting {
                 var bufferRowMask = (1 << Buffers.Shift) - 1;
                 
                 var f = default(Fragment);
+                f.Color.A = 255;
                 
                 while (stackTop >= NodeStack) {
                     // We need a copy anyway for subnode processing
@@ -628,6 +630,7 @@ namespace OctreeSplatting {
                             
                             f.Z = current.Z;
                             f.Address = current.Address;
+                            f.Color.RGB = node.Data;
                             *(traceFront++) = f;
                         } else {
                             int mx = ((current.MinX << SubpixelBits) + SubpixelHalf) - (current.X - (mapHalf >> current.Level));
@@ -645,6 +648,7 @@ namespace OctreeSplatting {
                                 var octant = ForwardQueues[mask].Octants & 7;
                                 f.Z = current.Z + (Deltas[octant].Z >> current.Level);
                                 f.Address = node.Address + octant;
+                                f.Color.RGB = Octree[f.Address].Data;
                                 *(traceFront++) = f;
                             }
                         }
@@ -665,6 +669,7 @@ namespace OctreeSplatting {
                         
                         f.Z = current.Z;
                         f.Address = current.Address;
+                        f.Color.RGB = node.Data;
                         
                         for (f.Y = current.MinY; f.Y <= current.MaxY; f.Y++) {
                             for (f.X = current.MinX; f.X <= current.MaxX; f.X++) {
@@ -705,6 +710,7 @@ namespace OctreeSplatting {
                                     var octant = ForwardQueues[mask].Octants & 7;
                                     f.Z = current.Z + (Deltas[octant].Z >> current.Level);
                                     f.Address = node.Address + octant;
+                                    f.Color.RGB = Octree[f.Address].Data;
                                     *(traceFront++) = f;
                                 }
                             }
@@ -769,6 +775,8 @@ namespace OctreeSplatting {
                                             var octant = ForwardQueues[octantMask].Octants & 7;
                                             f.Address = address + octant;
                                         }
+                                        
+                                        f.Color.RGB = Octree[f.Address].Data;
                                         
                                         *(traceFront++) = f;
                                     }
@@ -893,6 +901,9 @@ namespace OctreeSplatting {
                             Buffers.Depth[i] = fragment->Z;
                             Buffers.Instance[i] = InstanceIndex;
                             Buffers.Address[i] = fragment->Address;
+                            // Buffers.Color[i].RGB = Octree[fragment->Address].Data;
+                            // Buffers.Color[i].A = 255;
+                            Buffers.Color[i] = fragment->Color;
                         }
                     }
                     

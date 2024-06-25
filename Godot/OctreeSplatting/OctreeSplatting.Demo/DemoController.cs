@@ -39,6 +39,8 @@ namespace OctreeSplatting.Demo {
         private Renderbuffer renderbuffer;
 
         private System.Diagnostics.Stopwatch stopwatch = new System.Diagnostics.Stopwatch();
+        private System.Diagnostics.Stopwatch stopwatchBegin = new System.Diagnostics.Stopwatch();
+        private System.Diagnostics.Stopwatch stopwatchEnd = new System.Diagnostics.Stopwatch();
         private double averageFrameTime;
         private long frameCount;
         private Dictionary<int, int> timeHistogram = new Dictionary<int, int>();
@@ -48,7 +50,8 @@ namespace OctreeSplatting.Demo {
         private Color32 background = new Color32 {R = 50, G = 80, B = 80, A = 255};
 
         public string ViewInfo => $"P={(int)cameraPitch}, Y={(int)cameraYaw}, Z={zoomSteps}";
-        public string TimeInfo => $"{FrameTime} ({MostProbableTime}) ms @ {ThreadCount} thread(s)";
+        //public string TimeInfo => $"{FrameTime} ({MostProbableTime}) ms @ {ThreadCount} thread(s)";
+        public string TimeInfo => $"{FrameTime}; {stopwatchBegin.ElapsedMilliseconds}, {stopwatchEnd.ElapsedMilliseconds}";
         public int FrameTime => (int)stopwatch.ElapsedMilliseconds;
         public double AverageFrameTime => averageFrameTime;
         public int MostProbableTime => mostProbableTime;
@@ -113,7 +116,7 @@ namespace OctreeSplatting.Demo {
             playerModel = new Object3D(playerOctree);
             playerModel.Rotation = modelRotation;
             playerModel.Scale = Vector3.One * 0.025f;
-            models.Add(playerModel);
+            // models.Add(playerModel);
             
             for (int ix = -gridExtent; ix <= gridExtent; ix++) {
                 for (int iz = -gridExtent; iz <= gridExtent; iz++) {
@@ -187,18 +190,24 @@ namespace OctreeSplatting.Demo {
             float time = timer.ElapsedMilliseconds / 1000f;
             var deformRotation = Matrix4x4.CreateFromYawPitchRoll((float)Math.Sin(time*1.5f), 0, 0);
             playerModel.ResetCage();
-            playerModel.Cage[2] = Vector3.Transform(playerModel.Cage[2], deformRotation);
-            playerModel.Cage[3] = Vector3.Transform(playerModel.Cage[3], deformRotation);
-            playerModel.Cage[6] = Vector3.Transform(playerModel.Cage[6], deformRotation);
-            playerModel.Cage[7] = Vector3.Transform(playerModel.Cage[7], deformRotation);
+            // playerModel.Cage[2] = Vector3.Transform(playerModel.Cage[2], deformRotation);
+            // playerModel.Cage[3] = Vector3.Transform(playerModel.Cage[3], deformRotation);
+            // playerModel.Cage[6] = Vector3.Transform(playerModel.Cage[6], deformRotation);
+            // playerModel.Cage[7] = Vector3.Transform(playerModel.Cage[7], deformRotation);
             
             stopwatch.Restart();
-
+            
             renderbuffer.UseTemporalUpscaling = UseUpscaling;
-
+            
+            stopwatchBegin.Restart();
             renderbuffer.Begin(background);
+            stopwatchBegin.Stop();
+            
             DrawOctrees(playerCamera.Inverse, cameraFrustum.Matrix);
+            
+            stopwatchEnd.Restart();
             renderbuffer.End();
+            stopwatchEnd.Stop();
             
             stopwatch.Stop();
             

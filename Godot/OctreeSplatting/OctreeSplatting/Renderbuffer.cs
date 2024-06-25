@@ -21,6 +21,7 @@ namespace OctreeSplatting {
 			public int* Depth;
 			public uint* Address;
 			public uint* Instance;
+			public Color32* Color;
 			public StencilData* Stencil;
 		}
 		
@@ -77,7 +78,7 @@ namespace OctreeSplatting {
 			
 			var tileArea = (1 << tileShiftX) * tilesY;
 			var pixelArea = (1 << shiftX) * sizeY;
-			data = new byte[sizeof(StencilData) * tileArea + 3 * sizeof(int) * pixelArea];
+			data = new byte[sizeof(StencilData) * tileArea + 4 * sizeof(int) * pixelArea];
 			
 			finalPixels = new Color32[sizeX * sizeY];
 			colorHistory = new Color32[finalPixels.Length];
@@ -111,6 +112,7 @@ namespace OctreeSplatting {
 					buffers.Depth[dataIndex] = FarPlane;
 					buffers.Address[dataIndex] = uint.MaxValue;
 					buffers.Instance[dataIndex] = uint.MaxValue;
+					buffers.Color[dataIndex] = background;
 				}
 			}
 		}
@@ -149,6 +151,8 @@ namespace OctreeSplatting {
 			buffers.Address = (uint*)dataPtr;
 			dataPtr += sizeof(uint) * pixelArea;
 			buffers.Instance = (uint*)dataPtr;
+			dataPtr += sizeof(uint) * pixelArea;
+			buffers.Color = (Color32*)dataPtr;
 			
 			return buffers;
 		}
@@ -172,17 +176,19 @@ namespace OctreeSplatting {
 					int dataIndex = yData << shiftX;
 					int colorIndex = startX + (y * sizeX);
 					for (int x = startX; x < sizeX; x += step, colorIndex += step, dataIndex++) {
-						var color = background;
+						// var color = background;
 						
-						var instance = buffers.Instance[dataIndex];
-						if (instance < instanceCount) {
-							var instanceInfo = instanceInfos[instance];
-							var address = buffers.Address[dataIndex];
-							if (address < instanceInfo.Octree.Length) {
-								color.RGB = instanceInfo.Octree[address].Data;
-								color.A = 255;
-							}
-						}
+						// var instance = buffers.Instance[dataIndex];
+						// if (instance < instanceCount) {
+						// 	var instanceInfo = instanceInfos[instance];
+						// 	var address = buffers.Address[dataIndex];
+						// 	if (address < instanceInfo.Octree.Length) {
+						// 		color.RGB = instanceInfo.Octree[address].Data;
+						// 		color.A = 255;
+						// 	}
+						// }
+						
+						var color = buffers.Color[dataIndex];
 						
 						if (UseTemporalUpscaling) {
 							var deltaR = color.R - historyPtr[colorIndex].R;

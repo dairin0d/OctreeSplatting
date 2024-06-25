@@ -33,6 +33,8 @@ namespace OctreeSplatting.GodotDemo {
 		};
 		private bool useLoadedModels = true;
 		
+		public static string FrameTimeInfo = "";
+		
 		public override void _Ready() {
 			Thread.CurrentThread.Priority = ThreadPriority.Highest;
 			
@@ -84,6 +86,7 @@ namespace OctreeSplatting.GodotDemo {
 			if (demoController == null) return;
 
 			demoController.RenderFrame();
+			FrameTimeInfo = demoController.TimeInfo;
 
 			var (sizeX, sizeY, pixels) = demoController.GetImageData();
 
