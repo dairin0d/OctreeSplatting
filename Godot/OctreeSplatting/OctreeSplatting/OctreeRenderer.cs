@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: 2021 dairin0d https://github.com/dairin0d
 
+// #define USE_PROFILING
+
 using System;
 using System.Numerics;
 using System.Runtime.InteropServices;
@@ -101,7 +103,9 @@ namespace OctreeSplatting {
         private UnsafeRef traceBufferRef;
         private UnsafeRef traceTilesRef;
         
+        #if USE_PROFILING
         private static SpinTimer spinTimer = new SpinTimer();
+        #endif
         
         public void Begin(Renderbuffer renderbuffer, Range2D viewport) {
             Renderbuffer = renderbuffer;
@@ -117,13 +121,17 @@ namespace OctreeSplatting {
             traceBufferRef.Set(traceBuffer);
             traceTilesRef.Set(traceTiles);
             
+            #if USE_PROFILING
             spinTimer.Reset();
             spinTimer.StartCounter();
+            #endif
             Timing.Start();
         }
         
         public void Finish() {
+            #if USE_PROFILING
             spinTimer.StopCounter();
+            #endif
             Timing.Stop();
             
             octreeRef.Clear();
@@ -567,7 +575,10 @@ namespace OctreeSplatting {
                     --stackTop;
                     
                     {
+                        #if USE_PROFILING
                         var time = spinTimer.Ticks;
+                        #endif
+                        
                         var txMin = current.MinX & ~Renderbuffer.TileMaskX;
                         var txMax = current.MaxX & ~Renderbuffer.TileMaskX;
                         var tyMin = current.MinY & ~Renderbuffer.TileMaskY;
@@ -586,10 +597,14 @@ namespace OctreeSplatting {
                             }
                             current.MinY = ty + Renderbuffer.TileSizeY;
                         }
+                        #if USE_PROFILING
                         Timing.Occlusion += spinTimer.Ticks - time;
+                        #endif
                         continue;
                         OcclusionTestPassed:;
+                        #if USE_PROFILING
                         Timing.Occlusion += spinTimer.Ticks - time;
+                        #endif
                     }
                     
                     ref var node = ref Octree[current.Address];
@@ -600,7 +615,9 @@ namespace OctreeSplatting {
                     const int TMY = Renderbuffer.TileMaskY;
                     
                     if (current.MaxSize < 1) {
+                        #if USE_PROFILING
                         var time = spinTimer.Ticks;
+                        #endif
                         
                         if ((node.Mask == 0) | (MapThreshold > 1)) {
                             f.X = current.MinX;
@@ -632,9 +649,14 @@ namespace OctreeSplatting {
                             }
                         }
                         
+                        #if USE_PROFILING
                         Timing.Pixel += spinTimer.Ticks - time;
+                        #endif
                     } else if ((node.Mask == 0) | (current.Level >= MaxLevel)) {
+                        #if USE_PROFILING
                         var time = spinTimer.Ticks;
+                        #endif
+                        
                         if (current.MaxSize > 1) {
                             current.Z += ExtentZ >> current.Level;
                         } else {
@@ -654,10 +676,15 @@ namespace OctreeSplatting {
                                 }
                             }
                         }
-
+                        
+                        #if USE_PROFILING
                         Timing.Leaf += spinTimer.Ticks - time;
+                        #endif
                     } else if (current.MaxSize < MapThreshold) {
+                        #if USE_PROFILING
                         var time = spinTimer.Ticks;
+                        #endif
+                        
                         int mapStartX = ((current.MinX << SubpixelBits) + SubpixelHalf) - (current.X - (mapHalf >> current.Level));
                         int mapStartY = ((current.MinY << SubpixelBits) + SubpixelHalf) - (current.Y - (mapHalf >> current.Level));
                         int mapShift = MapShift - current.Level;
@@ -683,10 +710,15 @@ namespace OctreeSplatting {
                             }
                         }
                         
+                        #if USE_PROFILING
                         Timing.Map += spinTimer.Ticks - time;
+                        #endif
                     } else {
                         if (current.MaxSize < MapThreshold8) {
+                            #if USE_PROFILING
                             var time = spinTimer.Ticks;
+                            #endif
+                            
                             ulong mask8 = 0;
                             for (int octant = 0, mshift = 0; octant < 8; octant++, mshift += 8) {
                                 var octantMask = Octree[node.Address + octant].Mask;
@@ -698,8 +730,10 @@ namespace OctreeSplatting {
                             int mapStartY = ((current.MinY << SubpixelBits) + SubpixelHalf) - (current.Y - (mapHalf >> current.Level));
                             int mapShift = MapShift - current.Level;
                             
+                            #if USE_PROFILING
                             var time2 = spinTimer.Ticks;
                             Timing.Map8Pre += time2 - time;
+                            #endif
                             
                             int my, mx;
                             for (my = mapStartY, f.Y = current.MinY; f.Y <= current.MaxY; f.Y++, my += SubpixelSize) {
@@ -741,9 +775,11 @@ namespace OctreeSplatting {
                                 }
                             }
                             
+                            #if USE_PROFILING
                             var time3 = spinTimer.Ticks;
                             Timing.Map8Loop += time3 - time2;
                             Timing.Map8 += time3 - time;
+                            #endif
                             continue;
                         }
                         
@@ -763,7 +799,9 @@ namespace OctreeSplatting {
                         // }
                         
                         {
+                        #if USE_PROFILING
                         var time = spinTimer.Ticks;
+                        #endif
                         
                         var queue = ReverseQueues[node.Mask].Octants;
                         
@@ -808,13 +846,17 @@ namespace OctreeSplatting {
                             stackTop->Level = nextLevel;
                         }
                         
+                        #if USE_PROFILING
                         Timing.Stack += spinTimer.Ticks - time;
+                        #endif
                         }
                     }
                 }
                 
                 {
+                    #if USE_PROFILING
                     var time = spinTimer.Ticks;
+                    #endif
                     
                     const int FarPlane = Renderbuffer.FarPlane;
                     
@@ -854,7 +896,9 @@ namespace OctreeSplatting {
                         }
                     }
                     
+                    #if USE_PROFILING
                     Timing.Write += spinTimer.Ticks - time;
+                    #endif
                 }
                 
                 return (int)(traceFront - TraceBuffer);
