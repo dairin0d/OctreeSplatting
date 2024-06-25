@@ -93,6 +93,8 @@ namespace OctreeSplatting {
         
         private Fragment[] traceBuffer;
         private TileTraceInfo[] traceTiles;
+        private int firstTile = -1;
+        private int lastTile = -1;
         
         private UnsafeRef octreeRef;
         private UnsafeRef queuesRef;
@@ -186,7 +188,7 @@ namespace OctreeSplatting {
             // return true;
         }
         
-        public unsafe Result Render() {
+        public unsafe Result Render(bool cleanup = true) {
             DrawnPixels = 0;
             
             var maxLevel = CalculateMaxLevel();
@@ -265,6 +267,8 @@ namespace OctreeSplatting {
                     
                     TraceBuffer = traceBufferPtr,
                     TraceTiles = traceTilesPtr,
+                    FirstTile = firstTile,
+                    LastTile = lastTile,
                     
                     MapX = mapX,
                     MapY = mapY,
@@ -288,7 +292,10 @@ namespace OctreeSplatting {
                     ShowBounds = ShowBounds,
                 };
                 
-                DrawnPixels = unsafeRenderer.Render();
+                DrawnPixels = unsafeRenderer.Render(cleanup);
+                
+                firstTile = unsafeRenderer.FirstTile;
+                lastTile = unsafeRenderer.LastTile;
             }
             
             return Result.Rendered;
@@ -308,6 +315,8 @@ namespace OctreeSplatting {
             
             Renderbuffer.GetTileBufferInfo(out var tileShift, out var tileArea);
             traceTiles = new TileTraceInfo[tileArea];
+            firstTile = -1;
+            lastTile = -1;
         }
         
         private int CalculateMaxLevel() {
@@ -498,6 +507,8 @@ namespace OctreeSplatting {
             
             public Fragment* TraceBuffer;
             public TileTraceInfo* TraceTiles;
+            public int FirstTile;
+            public int LastTile;
             
             public byte* MapX;
             public byte* MapY;
@@ -520,7 +531,9 @@ namespace OctreeSplatting {
             public Color24 BoundsColor;
             public bool ShowBounds;
             
-            public int Render() {
+            public int Render(bool cleanup = true) {
+                if (cleanup) UpdateTiles();
+                
                 int mapHalf = (MapSize << MapShift) >> 1;
                 
                 var stackTop = NodeStack;
@@ -545,10 +558,6 @@ namespace OctreeSplatting {
                 var stencilY = LookupPtrs.StencilY;
                 
                 var bufferRowMask = (1 << Buffers.Shift) - 1;
-                
-                // "Cube test" (to check the effects of dataset & cache misses)
-                // var node = Octree[stackTop[0].Address];
-                // node.Mask = 255;
                 
                 var f = default(Fragment);
                 
@@ -809,9 +818,6 @@ namespace OctreeSplatting {
                     
                     const int FarPlane = Renderbuffer.FarPlane;
                     
-                    var firstTile = -1;
-                    var lastTile = -1;
-                    
                     for (var fragment = TraceBuffer; fragment != traceFront; fragment++) {
                         // We need to clear self-stencil even if fragments are rejected by depth
                         var tx = fragment->X >> Renderbuffer.TileShiftX;
@@ -820,12 +826,12 @@ namespace OctreeSplatting {
                         if (TraceTiles[tileIndex].UpdateStencil == 0) {
                             TraceTiles[tileIndex].UpdateStencil = 1;
                             TraceTiles[tileIndex].Next = -1;
-                            if (lastTile < 0) {
-                                firstTile = tileIndex;
+                            if (LastTile < 0) {
+                                FirstTile = tileIndex;
                             } else {
-                                TraceTiles[lastTile].Next = tileIndex;
+                                TraceTiles[LastTile].Next = tileIndex;
                             }
-                            lastTile = tileIndex;
+                            LastTile = tileIndex;
                         }
                         
                         int i = fragment->X + (fragment->Y << Buffers.Shift);
@@ -848,49 +854,56 @@ namespace OctreeSplatting {
                         }
                     }
                     
-                    var tileRowMask = (1 << Buffers.TileShift) - 1;
-                    
-                    var nextTile = firstTile;
-                    while (nextTile >= 0) {
-                        var tileIndex = nextTile;
-                        nextTile = TraceTiles[tileIndex].Next;
-                        TraceTiles[tileIndex].Next = -1;
-                        
-                        var tile = Buffers.Stencil + tileIndex;
-                        
-                        if (TraceTiles[tileIndex].UpdateStencil != 0) {
-                            TraceTiles[tileIndex].UpdateStencil = 0;
-                            
-                            tile->Scene &= tile->Self;
-                            tile->Self = Renderbuffer.StencilClear;
-                        }
-                        
-                        if (TraceTiles[tileIndex].UpdateDepth != 0) {
-                            TraceTiles[tileIndex].UpdateDepth = 0;
-                            
-                            var maxDepth = -1;
-                            var txMin = (tileIndex & tileRowMask) << Renderbuffer.TileShiftX;
-                            var tyMin = (tileIndex >> Buffers.TileShift) << Renderbuffer.TileShiftY;
-                            var tyMax = tyMin + Renderbuffer.TileSizeY;
-                            for (var y = tyMin; y < tyMax; y++) {
-                                var iMin = txMin + (y << Buffers.Shift);
-                                var iMax = iMin + Renderbuffer.TileSizeX;
-                                for (var i = iMin; i < iMax; i++) {
-                                    if ((Buffers.Depth[i] < FarPlane) & (Buffers.Depth[i] > maxDepth)) {
-                                        maxDepth = Buffers.Depth[i];
-                                    }
-                                }
-                            }
-                            if (maxDepth >= 0) {
-                                tile->Depth = maxDepth;
-                            }
-                        }
-                    }
-                    
                     Timing.Write += spinTimer.Ticks - time;
                 }
                 
                 return (int)(traceFront - TraceBuffer);
+            }
+            
+            private void UpdateTiles() {
+                const int FarPlane = Renderbuffer.FarPlane;
+                
+                var tileRowMask = (1 << Buffers.TileShift) - 1;
+                
+                var nextTile = FirstTile;
+                while (nextTile >= 0) {
+                    var tileIndex = nextTile;
+                    nextTile = TraceTiles[tileIndex].Next;
+                    TraceTiles[tileIndex].Next = -1;
+                    
+                    var tile = Buffers.Stencil + tileIndex;
+                    
+                    if (TraceTiles[tileIndex].UpdateStencil != 0) {
+                        TraceTiles[tileIndex].UpdateStencil = 0;
+                        
+                        tile->Scene &= tile->Self;
+                        tile->Self = Renderbuffer.StencilClear;
+                    }
+                    
+                    if (TraceTiles[tileIndex].UpdateDepth != 0) {
+                        TraceTiles[tileIndex].UpdateDepth = 0;
+                        
+                        var maxDepth = -1;
+                        var txMin = (tileIndex & tileRowMask) << Renderbuffer.TileShiftX;
+                        var tyMin = (tileIndex >> Buffers.TileShift) << Renderbuffer.TileShiftY;
+                        var tyMax = tyMin + Renderbuffer.TileSizeY;
+                        for (var y = tyMin; y < tyMax; y++) {
+                            var iMin = txMin + (y << Buffers.Shift);
+                            var iMax = iMin + Renderbuffer.TileSizeX;
+                            for (var i = iMin; i < iMax; i++) {
+                                if ((Buffers.Depth[i] < FarPlane) & (Buffers.Depth[i] > maxDepth)) {
+                                    maxDepth = Buffers.Depth[i];
+                                }
+                            }
+                        }
+                        if (maxDepth >= 0) {
+                            tile->Depth = maxDepth;
+                        }
+                    }
+                }
+                
+                FirstTile = -1;
+                LastTile = -1;
             }
         }
     }

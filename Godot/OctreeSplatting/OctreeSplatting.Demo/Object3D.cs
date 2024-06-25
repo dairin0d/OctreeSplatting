@@ -80,6 +80,57 @@ namespace OctreeSplatting.Demo {
             Cage[7] = new Vector3(+1, +1, +1);
         }
         
+        public bool IsAffine(float tolerance = 1e-8f) {
+            var TMinX = Cage[0].X;
+            var XMinX = Cage[1].X - TMinX;
+            var YMinX = Cage[2].X - TMinX;
+            var ZMinX = Cage[4].X - TMinX;
+            var TMaxX = Cage[7].X;
+            var XMaxX = Cage[6].X - TMaxX;
+            var YMaxX = Cage[5].X - TMaxX;
+            var ZMaxX = Cage[3].X - TMaxX;
+            
+            var TMinY = Cage[0].Y;
+            var XMinY = Cage[1].Y - TMinY;
+            var YMinY = Cage[2].Y - TMinY;
+            var ZMinY = Cage[4].Y - TMinY;
+            var TMaxY = Cage[7].Y;
+            var XMaxY = Cage[6].Y - TMaxY;
+            var YMaxY = Cage[5].Y - TMaxY;
+            var ZMaxY = Cage[3].Y - TMaxY;
+            
+            var TMinZ = Cage[0].Z;
+            var XMinZ = Cage[1].Z - TMinZ;
+            var YMinZ = Cage[2].Z - TMinZ;
+            var ZMinZ = Cage[4].Z - TMinZ;
+            var TMaxZ = Cage[7].Z;
+            var XMaxZ = Cage[6].Z - TMaxZ;
+            var YMaxZ = Cage[5].Z - TMaxZ;
+            var ZMaxZ = Cage[3].Z - TMaxZ;
+            
+            float distortion, maxDistortion = 0f;
+            distortion = XMinX + XMaxX; if (distortion < 0f) distortion = -distortion;
+            if (distortion > maxDistortion) maxDistortion = distortion;
+            distortion = XMinY + XMaxY; if (distortion < 0f) distortion = -distortion;
+            if (distortion > maxDistortion) maxDistortion = distortion;
+            distortion = XMinZ + XMaxZ; if (distortion < 0f) distortion = -distortion;
+            if (distortion > maxDistortion) maxDistortion = distortion;
+            distortion = YMinX + YMaxX; if (distortion < 0f) distortion = -distortion;
+            if (distortion > maxDistortion) maxDistortion = distortion;
+            distortion = YMinY + YMaxY; if (distortion < 0f) distortion = -distortion;
+            if (distortion > maxDistortion) maxDistortion = distortion;
+            distortion = YMinZ + YMaxZ; if (distortion < 0f) distortion = -distortion;
+            if (distortion > maxDistortion) maxDistortion = distortion;
+            distortion = ZMinX + ZMaxX; if (distortion < 0f) distortion = -distortion;
+            if (distortion > maxDistortion) maxDistortion = distortion;
+            distortion = ZMinY + ZMaxY; if (distortion < 0f) distortion = -distortion;
+            if (distortion > maxDistortion) maxDistortion = distortion;
+            distortion = ZMinZ + ZMaxZ; if (distortion < 0f) distortion = -distortion;
+            if (distortion > maxDistortion) maxDistortion = distortion;
+            
+            return maxDistortion <= tolerance;
+        }
+        
         private void UpdateMatrix() {
             matrix = Matrix4x4.CreateScale(scale) * Matrix4x4.CreateFromQuaternion(rotation);
             matrix.Translation = position;

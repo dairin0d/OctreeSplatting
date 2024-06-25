@@ -384,6 +384,9 @@ namespace OctreeSplatting.Demo {
             
             private SubdivisionDecider subdivisionDecider;
             
+            private bool reuseStencil;
+            private bool isAffine;
+            
             public float ZIntercept {
                 get => subdivider.ZIntercept;
                 set => subdivider.ZIntercept = value;
@@ -482,6 +485,9 @@ namespace OctreeSplatting.Demo {
                     }
                     
                     if (decision == SubdivisionDecision.Subdivide) {
+                        isAffine = object3d.IsAffine();
+                        reuseStencil = false;
+                        
                         var mask = subdivisionDecider.IsLeaf ? (byte)255 : node.Mask;
                         
                         var subdivisionData = new SubdivisionData {
@@ -574,7 +580,8 @@ namespace OctreeSplatting.Demo {
                     renderer.AbsoluteDilation = Math.Max(AbsoluteDilation * dilationUpscale, distortion * DistortionAbsoluteDilation);
                     renderer.RelativeDilation = Math.Max(RelativeDilation * dilationUpscale, distortion * DistortionRelativeDilation);
                     
-                    var result = renderer.Render();
+                    var result = renderer.Render(!reuseStencil);
+                    if (result == OctreeRenderer.Result.Rendered) reuseStencil = isAffine;
                     if (result >= OctreeRenderer.Result.Culled) return 0;
                     
                     subdivisionDecider.IsTooBig = (result == OctreeRenderer.Result.TooBig);
