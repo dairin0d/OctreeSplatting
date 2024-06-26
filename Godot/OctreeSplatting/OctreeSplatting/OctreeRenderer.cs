@@ -98,8 +98,8 @@ namespace OctreeSplatting {
         private int firstTile = -1;
         private int lastTile = -1;
         
-        private int indexMask;
-        private UnsafeRef queuesRef;
+        private UnsafeRef sparseQueuesRef;
+        private UnsafeRef packedQueuesRef;
         private UnsafeRef octantToIndexRef;
         private UnsafeRef indexToOctantRef;
         private UnsafeRef traceBufferRef;
@@ -119,8 +119,8 @@ namespace OctreeSplatting {
         public void Begin() {
             InitializeTraceBuffer();
             
-            indexMask = 255;
-            queuesRef.Set(OctantOrder.SparseQueues);
+            sparseQueuesRef.Set(OctantOrder.SparseQueues);
+            packedQueuesRef.Set(OctantOrder.PackedQueues);
             octantToIndexRef.Set(OctantOrder.OctantToIndex);
             indexToOctantRef.Set(OctantOrder.IndexToOctant);
             traceBufferRef.Set(traceBuffer);
@@ -139,7 +139,8 @@ namespace OctreeSplatting {
             #endif
             Timing.Stop();
             
-            queuesRef.Clear();
+            sparseQueuesRef.Clear();
+            packedQueuesRef.Clear();
             octantToIndexRef.Clear();
             indexToOctantRef.Clear();
             traceBufferRef.Clear();
@@ -255,7 +256,14 @@ namespace OctreeSplatting {
             
             var buffers = Renderbuffer.GetBuffers();
             
-            var queuesPtr = (OctantOrder.Queue*)queuesRef;
+            var indexMask = 255;
+            var queuesPtr = (OctantOrder.Queue*)sparseQueuesRef;
+            
+            if (Octree.IsPacked) {
+                indexMask = 0;
+                queuesPtr = (OctantOrder.Queue*)packedQueuesRef;
+            }
+            
             var traceBufferPtr = (Fragment*)traceBufferRef;
             var traceTilesPtr = (TileTraceInfo*)traceTilesRef;
             {

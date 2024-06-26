@@ -10,6 +10,7 @@ namespace OctreeSplatting {
             public Color24* Data;
         }
         
+        public readonly bool IsPacked;
         public readonly int NodeCount;
         public readonly OctreeNode[] Nodes;
         public readonly byte[] Buffer;
@@ -22,7 +23,7 @@ namespace OctreeSplatting {
         private UnsafeRef nodesRef;
         private UnsafeRef bufferRef;
         
-        public Octree(OctreeNode[] nodes) {
+        public Octree(OctreeNode[] nodes, bool packed = false) {
             Nodes = nodes;
             
             NodeCount = Nodes.Length;
@@ -35,19 +36,47 @@ namespace OctreeSplatting {
             
             Buffer = new byte[AddrSize + MaskSize + DataSize];
             
-            MakeBuffer();
+            GetPointers();
+            IsPacked = packed;
+            if (IsPacked) {
+                MakePackedBuffer();
+            } else {
+                MakeSparseBuffer();
+            }
+            FreePointers();
         }
         
-        private unsafe void MakeBuffer() {
-            GetPointers();
-            
+        private unsafe void MakeSparseBuffer() {
             for (int i = 0; i < NodeCount; i++) {
                 pointers.Addr[i] = pointers.Node[i].Address;
                 pointers.Mask[i] = pointers.Node[i].Mask;
                 pointers.Data[i] = pointers.Node[i].Data;
             }
+        }
+        
+        private unsafe void MakePackedBuffer() {
+            uint count = 1;
+            pointers.Addr[0] = 0;
             
-            FreePointers();
+            for (uint index = 0; index < count; index++) {
+                ref var node = ref pointers.Node[pointers.Addr[index]];
+                pointers.Addr[index] = count;
+                pointers.Mask[index] = node.Mask;
+                pointers.Data[index] = node.Data;
+                for (uint octant = 0; octant < 8; octant++) {
+                    if ((node.Mask & (1 << (int)octant)) == 0) continue;
+                    pointers.Addr[count] = node.Address + octant;
+                    count++;
+                    if (count > NodeCount) {
+                        Godot.GD.PrintErr("Recursion detected!");
+                        pointers.Addr[0] = 0;
+                        pointers.Mask[0] = 0;
+                        return;
+                    }
+                }
+            }
+            
+            Godot.GD.Print($"Original: {NodeCount}, Packed: {count}");
         }
         
         public unsafe uint GetAddress(uint address) {
