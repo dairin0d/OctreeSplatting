@@ -52,12 +52,12 @@ namespace OctreeSplatting {
         
         public unsafe uint GetAddress(uint address) {
             if (!hasPointers) return 0;
-            return pointers.Node[address].Address;
+            return pointers.Addr[address];
         }
         
         public unsafe byte GetMask(uint address) {
             if (!hasPointers) return 0;
-            return pointers.Node[address].Mask;
+            return pointers.Mask[address];
         }
         
         public unsafe Pointers GetPointers() {

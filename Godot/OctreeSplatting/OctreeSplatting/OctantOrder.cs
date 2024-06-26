@@ -19,8 +19,8 @@ namespace OctreeSplatting {
         public const int XYZ = 0, XZY = 1, YXZ = 2, YZX = 3, ZXY = 4, ZYX = 5;
         
         public static readonly int[] Counts;
-        public static readonly int[] OctantToIndex;
-        public static readonly int[] IndexToOctant;
+        public static readonly uint[] OctantToIndex;
+        public static readonly uint[] IndexToOctant;
         public static readonly Queue[] SparseQueues;
         public static readonly Queue[] PackedQueues;
         
@@ -69,23 +69,22 @@ namespace OctreeSplatting {
             return counts;
         }
         
-        private static (int[] ToIndex, int[] ToOctant) MakeMaps() {
-            var octantToIndex = new int[256*8];
-            var indexToOctant = new int[256*8];
+        private static (uint[] ToIndex, uint[] ToOctant) MakeMaps() {
+            var octantToIndex = new uint[256];
+            var indexToOctant = new uint[256];
             
             for (int mask = 0; mask < 256; mask++) {
-                int maskKey = mask << 3;
                 int maxIndex = -1;
+                uint o2i = 0, i2o = 0;
                 for (int octant = 0; octant < 8; octant++) {
                     int index = GetOctantIndex(octant, mask);
-                    octantToIndex[maskKey|octant] = index;
-                    if (index > maxIndex) maxIndex = index;
                     if (index < 0) continue;
-                    indexToOctant[maskKey|index] = octant;
+                    if (index > maxIndex) maxIndex = index;
+                    o2i |= ((uint)index | 0b1000) << (octant*4);
+                    i2o |= ((uint)octant | 0b1000) << (index*4);
                 }
-                for (int index = maxIndex+1; index < 8; index++) {
-                    indexToOctant[maskKey|index] = -1;
-                }
+                octantToIndex[mask] = o2i;
+                indexToOctant[mask] = i2o;
             }
             
             return (octantToIndex, indexToOctant);
@@ -128,7 +127,7 @@ namespace OctreeSplatting {
             case ZYX: uShift = 2; vShift = 1; wShift = 0; break;
             }
             
-            var map = OctantToIndex;
+            var o2i = OctantToIndex[mask];
             
             Queue queue = default;
             int shift = 0;
@@ -138,7 +137,7 @@ namespace OctreeSplatting {
                         int flip = (u << uShift) | (v << vShift) | (w << wShift);
                         int octant = (start ^ flip);
                         if ((mask & (1 << octant)) == 0) continue;
-                        int index = packed ? map[(mask << 3)|octant] : octant;
+                        int index = packed ? (int)(o2i >> (octant*4)) & 7 : octant;
                         queue.Octants |= (uint)((octant|8) << shift);
                         queue.Indices |= (uint)((index|8) << shift);
                         shift += 4;
