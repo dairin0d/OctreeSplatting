@@ -571,7 +571,10 @@ namespace OctreeSplatting.Demo {
                 byte subnodeMask;
                 if ((nodeMask != 0) & (state.Level <= maxLevel)) {
                     var nodeAddress = renderer.Octree.GetAddress(state.ParentData.Address);
-                    var octantIndex = (OctantOrder.OctantToIndex[nodeMask] >> (int)(state.Octant*4)) & 7;
+                    var octantIndex = state.Octant;
+                    if (renderer.Octree.IsPacked) {
+                        octantIndex = (OctantOrder.OctantToIndex[nodeMask] >> (int)(state.Octant*4)) & 7;
+                    }
                     state.Data.Address = nodeAddress + octantIndex;
                     subnodeMask = renderer.Octree.GetMask(state.Data.Address);
                     

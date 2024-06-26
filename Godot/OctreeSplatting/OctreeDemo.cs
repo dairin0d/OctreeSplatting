@@ -67,8 +67,11 @@ namespace OctreeSplatting.GodotDemo {
 		}
 
 		private void InitializeScene() {
-			octree = LoadOctree($"../../Unity/OctreeSplatting/Assets/Resources/DemoOctree.bytes");
-			characterOctree = LoadOctree($"../../Unity/OctreeSplatting/Assets/Resources/CharacterOctree.bytes");
+			const bool packed = true;
+			var townPath = $"../../Unity/OctreeSplatting/Assets/Resources/DemoOctree.bytes";
+			var charPath = $"../../Unity/OctreeSplatting/Assets/Resources/CharacterOctree.bytes";
+			octree = LoadOctree(townPath, packed);
+			characterOctree = LoadOctree(charPath, packed);
 
 			if (octree == null) {
 				GD.Print("ERROR: DemoOctree dataset not found!");
@@ -187,11 +190,11 @@ namespace OctreeSplatting.GodotDemo {
 			int IntKeyReleased(string key) => Input.IsActionJustReleased(key) ? 1 : 0;
 		}
 
-		private Octree LoadOctree(string path) {
+		private Octree LoadOctree(string path, bool packed = false) {
 			if (!System.IO.File.Exists(path)) return null;
 			var bytes = System.IO.File.ReadAllBytes(path);
 			var nodes = FromBytes<OctreeNode>(bytes);
-			return (nodes != null ? new Octree(nodes) : null);
+			return (nodes != null ? new Octree(nodes, packed) : null);
 		}
 
 		private static T[] FromBytes<T>(byte[] bytes) where T : struct {
