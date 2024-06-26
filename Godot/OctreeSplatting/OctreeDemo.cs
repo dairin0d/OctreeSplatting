@@ -5,7 +5,7 @@ using System.Threading;
 
 namespace OctreeSplatting.GodotDemo {
 	public partial class OctreeDemo : TextureRect {
-		private OctreeSplatting.Demo.DemoController demoController;
+		private Demo.DemoController demoController;
 		
 		private int width = 640;
 		private int height = 480;
@@ -18,9 +18,9 @@ namespace OctreeSplatting.GodotDemo {
 		
 		private Vector2 mouseSpeed;
 		
-		private OctreeNode[] octree;
-		private OctreeNode[] characterOctree;
-		private OctreeNode[] cubeOctree = new OctreeNode[] {
+		private Octree octree;
+		private Octree characterOctree;
+		private Octree cubeOctree = new Octree(new OctreeNode[] {
 			new OctreeNode {Address = 0, Data = new Color24{G=196}, Mask=255},
 			new OctreeNode {Address = 0, Data = new Color24{G=196}, Mask=255},
 			new OctreeNode {Address = 0, Data = new Color24{G=196}, Mask=255},
@@ -30,7 +30,7 @@ namespace OctreeSplatting.GodotDemo {
 			new OctreeNode {Address = 0, Data = new Color24{G=196}, Mask=255},
 			new OctreeNode {Address = 0, Data = new Color24{G=196}, Mask=255},
 			new OctreeNode {Address = 0, Data = new Color24{G=196}, Mask=255},
-		};
+		});
 		private bool useLoadedModels = true;
 		
 		public override void _Ready() {
@@ -75,7 +75,7 @@ namespace OctreeSplatting.GodotDemo {
 				return;
 			}
 
-			demoController = new OctreeSplatting.Demo.DemoController(octree, characterOctree);
+			demoController = new Demo.DemoController(octree, characterOctree);
 			
 			demoController.Resize(width, height);
 		}
@@ -187,10 +187,11 @@ namespace OctreeSplatting.GodotDemo {
 			int IntKeyReleased(string key) => Input.IsActionJustReleased(key) ? 1 : 0;
 		}
 
-		private OctreeSplatting.OctreeNode[] LoadOctree(string path) {
+		private Octree LoadOctree(string path) {
 			if (!System.IO.File.Exists(path)) return null;
 			var bytes = System.IO.File.ReadAllBytes(path);
-			return FromBytes<OctreeSplatting.OctreeNode>(bytes);
+			var nodes = FromBytes<OctreeNode>(bytes);
+			return (nodes != null ? new Octree(nodes) : null);
 		}
 
 		private static T[] FromBytes<T>(byte[] bytes) where T : struct {

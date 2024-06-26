@@ -89,7 +89,7 @@ namespace OctreeSplatting.Demo {
             set => cameraYaw = value % 360f;
         }
 
-        public DemoController(OctreeNode[] octree, OctreeNode[] playerOctree = null) {
+        public DemoController(Octree octree, Octree playerOctree = null) {
             timer.Start();
             
             renderJobs = new RenderingJob[16];
@@ -125,7 +125,7 @@ namespace OctreeSplatting.Demo {
             }
         }
         
-        public void AssignOctrees(OctreeNode[] octree, OctreeNode[] playerOctree = null) {
+        public void AssignOctrees(Octree octree, Octree playerOctree = null) {
             foreach (var model in models) {
                 model.Octree = octree;
             }
@@ -193,12 +193,22 @@ namespace OctreeSplatting.Demo {
             playerModel.Cage[7] = Vector3.Transform(playerModel.Cage[7], deformRotation);
             
             stopwatch.Restart();
-
+            
             renderbuffer.UseTemporalUpscaling = UseUpscaling;
-
+            
+            GatherVisibleModels(playerCamera.Inverse, cameraFrustum.Matrix);
+            
+            foreach (var model in sortedModels) {
+                model.Octree.GetPointers();
+            }
+            
             renderbuffer.Begin(background);
-            DrawOctrees(playerCamera.Inverse, cameraFrustum.Matrix);
+            DrawOctrees(cameraFrustum.Matrix);
             renderbuffer.End();
+            
+            foreach (var model in sortedModels) {
+                model.Octree.FreePointers();
+            }
             
             stopwatch.Stop();
             
@@ -235,9 +245,7 @@ namespace OctreeSplatting.Demo {
             }
         }
 
-        private void DrawOctrees(Matrix4x4 viewMatrix, Matrix4x4 projectionMatrix) {
-            GatherVisibleModels(viewMatrix, projectionMatrix);
-            
+        private void DrawOctrees(Matrix4x4 projectionMatrix) {
             var vNear = Vector4.Transform(new Vector3(0, 0, cameraFrustum.Near), projectionMatrix);
             var vFar = Vector4.Transform(new Vector3(0, 0, cameraFrustum.Far), projectionMatrix);
             vNear.Z = 0;
@@ -447,12 +455,12 @@ namespace OctreeSplatting.Demo {
                     renderer.Octree = object3d.Octree;
                     renderer.RootAddress = 0;
                     
-                    ref var node = ref renderer.Octree[renderer.RootAddress];
+                    var nodeMask = renderer.Octree.GetMask(renderer.RootAddress);
                     
                     var rootSizeX = object3d.ProjectedMax.X - object3d.ProjectedMin.X;
                     var rootSizeY = object3d.ProjectedMax.Y - object3d.ProjectedMin.Y;
                     
-                    subdivisionDecider.IsLeaf = IsLeaf(node.Mask, 0);
+                    subdivisionDecider.IsLeaf = IsLeaf(nodeMask, 0);
                     subdivisionDecider.IsTooClose = IsTooClose(object3d.ProjectedMin.Z);
                     subdivisionDecider.IsTooBig = IsTooBig(rootSizeX, rootSizeY);
                     subdivisionDecider.IsDistorted = false;
@@ -488,7 +496,7 @@ namespace OctreeSplatting.Demo {
                         isAffine = object3d.IsAffine();
                         reuseStencil = false;
                         
-                        var mask = subdivisionDecider.IsLeaf ? (byte)255 : node.Mask;
+                        var mask = subdivisionDecider.IsLeaf ? (byte)255 : nodeMask;
                         
                         var subdivisionData = new SubdivisionData {
                             Address = renderer.RootAddress,
@@ -550,9 +558,9 @@ namespace OctreeSplatting.Demo {
                 renderer.Matrix.M42 += screenCenter.Y;
                 renderer.Matrix.M43 -= EffectiveNear;
                 
-                ref var node = ref renderer.Octree[state.ParentData.Address];
+                var nodeMask = renderer.Octree.GetMask(state.ParentData.Address);
                 
-                subdivisionDecider.IsLeaf = IsLeaf(node.Mask, state.Level);
+                subdivisionDecider.IsLeaf = IsLeaf(nodeMask, state.Level);
                 subdivisionDecider.IsTooClose = IsTooClose(min.Z);
                 subdivisionDecider.IsTooBig = IsTooBig(max.X - min.X, max.Y - min.Y);
                 subdivisionDecider.IsDistorted = IsDistorted(distortion);
@@ -561,9 +569,10 @@ namespace OctreeSplatting.Demo {
                 if (decision == SubdivisionDecision.Cull) return 0;
                 
                 byte subnodeMask;
-                if ((node.Mask != 0) & (state.Level <= maxLevel)) {
-                    state.Data.Address = node.Address + state.Octant;
-                    subnodeMask = renderer.Octree[state.Data.Address].Mask;
+                if ((nodeMask != 0) & (state.Level <= maxLevel)) {
+                    var nodeAddress = renderer.Octree.GetAddress(state.ParentData.Address);
+                    state.Data.Address = nodeAddress + state.Octant;
+                    subnodeMask = renderer.Octree.GetMask(state.Data.Address);
                     
                     subdivisionDecider.IsLeaf = IsLeaf(subnodeMask, state.Level);
                     decision = subdivisionDecider.Evaluate();

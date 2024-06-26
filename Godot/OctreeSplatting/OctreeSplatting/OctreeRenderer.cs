@@ -67,7 +67,7 @@ namespace OctreeSplatting {
         
         // Model info
         public Matrix4x4 Matrix;
-        public OctreeNode[] Octree;
+        public Octree Octree;
         public uint RootAddress;
         
         public int MapThreshold = 2;
@@ -98,7 +98,6 @@ namespace OctreeSplatting {
         private int firstTile = -1;
         private int lastTile = -1;
         
-        private UnsafeRef octreeRef;
         private UnsafeRef queuesRef;
         private UnsafeRef traceBufferRef;
         private UnsafeRef traceTilesRef;
@@ -134,7 +133,6 @@ namespace OctreeSplatting {
             #endif
             Timing.Stop();
             
-            octreeRef.Clear();
             queuesRef.Clear();
             traceBufferRef.Clear();
             traceTilesRef.Clear();
@@ -239,8 +237,6 @@ namespace OctreeSplatting {
             var mapY8 = stackalloc ulong[MapSize];
             var mapShift = CalculateMaps(deltasPtr, mapX, mapY, mapX8, mapY8, useMap8);
             
-            octreeRef.Set(Octree);
-            
             var instanceInfo = new InstanceInfo {
                 Matrix = Matrix,
                 Octree = Octree,
@@ -252,7 +248,6 @@ namespace OctreeSplatting {
             
             var buffers = Renderbuffer.GetBuffers();
             
-            var octreePtr = (OctreeNode*)octreeRef;
             var queuesPtr = (OctantOrder.Queue*)queuesRef;
             var traceBufferPtr = (Fragment*)traceBufferRef;
             var traceTilesPtr = (TileTraceInfo*)traceTilesRef;
@@ -262,7 +257,7 @@ namespace OctreeSplatting {
                     Buffers = buffers,
                     InstanceIndex = Renderbuffer.InstanceCount - 1,
                     
-                    Octree = octreePtr,
+                    Octree = Octree.GetPointers(),
                     
                     ExtentX = extentX,
                     ExtentY = extentY,
@@ -504,7 +499,7 @@ namespace OctreeSplatting {
             public Renderbuffer.Pointers Buffers;
             public uint InstanceIndex;
             
-            public OctreeNode* Octree;
+            public Octree.Pointers Octree;
             
             public int ExtentX, ExtentY, ExtentZ;
             public Delta* Deltas;
@@ -607,7 +602,7 @@ namespace OctreeSplatting {
                         #endif
                     }
                     
-                    ref var node = ref Octree[current.Address];
+                    var nodeMask = Octree.Node[current.Address].Mask;
                     
                     const int TSX = Renderbuffer.TileShiftX;
                     const int TSY = Renderbuffer.TileShiftY;
@@ -619,7 +614,7 @@ namespace OctreeSplatting {
                         var time = spinTimer.Ticks;
                         #endif
                         
-                        if ((node.Mask == 0) | (MapThreshold > 1)) {
+                        if ((nodeMask == 0) | (MapThreshold > 1)) {
                             f.X = current.MinX;
                             f.Y = current.MinY;
                             var stencilIndex = (f.X >> TSX) + ((f.Y >> TSY) << Buffers.TileShift);
@@ -633,7 +628,7 @@ namespace OctreeSplatting {
                             int mx = ((current.MinX << SubpixelBits) + SubpixelHalf) - (current.X - (mapHalf >> current.Level));
                             int my = ((current.MinY << SubpixelBits) + SubpixelHalf) - (current.Y - (mapHalf >> current.Level));
                             int mapShift = MapShift - current.Level;
-                            int mask = MapX[mx >> mapShift] & MapY[my >> mapShift] & node.Mask;
+                            int mask = MapX[mx >> mapShift] & MapY[my >> mapShift] & nodeMask;
                             
                             if (mask != 0) {
                                 f.X = current.MinX;
@@ -642,9 +637,11 @@ namespace OctreeSplatting {
                                 var stencilMask = 1UL << ((f.X & TMX) + ((f.Y & TMY) << TSX));
                                 Buffers.Stencil[stencilIndex].Self &= ~stencilMask;
                                 
+                                var nodeAddress = Octree.Node[current.Address].Address;
+                                
                                 var octant = ForwardQueues[mask].Octants & 7;
                                 f.Z = current.Z + (Deltas[octant].Z >> current.Level);
-                                f.Address = node.Address + octant;
+                                f.Address = nodeAddress + octant;
                                 *(traceFront++) = f;
                             }
                         }
@@ -652,7 +649,7 @@ namespace OctreeSplatting {
                         #if USE_PROFILING
                         Timing.Pixel += spinTimer.Ticks - time;
                         #endif
-                    } else if ((node.Mask == 0) | (current.Level >= MaxLevel)) {
+                    } else if ((nodeMask == 0) | (current.Level >= MaxLevel)) {
                         #if USE_PROFILING
                         var time = spinTimer.Ticks;
                         #endif
@@ -689,9 +686,11 @@ namespace OctreeSplatting {
                         int mapStartY = ((current.MinY << SubpixelBits) + SubpixelHalf) - (current.Y - (mapHalf >> current.Level));
                         int mapShift = MapShift - current.Level;
                         
+                        var nodeAddress = Octree.Node[current.Address].Address;
+                        
                         int my, mx;
                         for (my = mapStartY, f.Y = current.MinY; f.Y <= current.MaxY; f.Y++, my += SubpixelSize) {
-                            int maskY = MapY[my >> mapShift] & node.Mask;
+                            int maskY = MapY[my >> mapShift] & nodeMask;
                             for (mx = mapStartX, f.X = current.MinX; f.X <= current.MaxX; f.X++, mx += SubpixelSize) {
                                 int mask = MapX[mx >> mapShift] & maskY;
                                 
@@ -704,7 +703,7 @@ namespace OctreeSplatting {
                                     
                                     var octant = ForwardQueues[mask].Octants & 7;
                                     f.Z = current.Z + (Deltas[octant].Z >> current.Level);
-                                    f.Address = node.Address + octant;
+                                    f.Address = nodeAddress + octant;
                                     *(traceFront++) = f;
                                 }
                             }
@@ -719,10 +718,12 @@ namespace OctreeSplatting {
                             var time = spinTimer.Ticks;
                             #endif
                             
+                            var nodeAddress = Octree.Node[current.Address].Address;
+                            
                             ulong mask8 = 0;
                             for (int octant = 0, mshift = 0; octant < 8; octant++, mshift += 8) {
-                                var octantMask = Octree[node.Address + octant].Mask;
-                                if ((octantMask == 0) & (((node.Mask >> octant) & 1) != 0)) octantMask = 255;
+                                var octantMask = Octree.Node[nodeAddress + octant].Mask;
+                                if ((octantMask == 0) & (((nodeMask >> octant) & 1) != 0)) octantMask = 255;
                                 mask8 |= ((ulong)octantMask) << mshift;
                             }
                             
@@ -762,11 +763,11 @@ namespace OctreeSplatting {
                                         
                                         f.Z = current.Z + (Deltas[octant8].Z >> current.Level);
                                         
-                                        var octantMask = Octree[node.Address + octant8].Mask;
+                                        var octantMask = Octree.Node[nodeAddress + octant8].Mask;
                                         if ((octantMask == 0) | useSimple) {
-                                            f.Address = node.Address + octant8;
+                                            f.Address = nodeAddress + octant8;
                                         } else {
-                                            var address = Octree[node.Address + octant8].Address;
+                                            var address = Octree.Node[nodeAddress + octant8].Address;
                                             var octant = ForwardQueues[octantMask].Octants & 7;
                                             f.Address = address + octant;
                                         }
@@ -804,7 +805,9 @@ namespace OctreeSplatting {
                         var time = spinTimer.Ticks;
                         #endif
                         
-                        var queue = ReverseQueues[node.Mask].Octants;
+                        var nodeAddress = Octree.Node[current.Address].Address;
+                        
+                        var queue = ReverseQueues[nodeMask].Octants;
                         
                         int nextLevel = current.Level + 1;
                         int nodeExtentX = (ExtentX >> nextLevel) + Dilation;
@@ -843,7 +846,7 @@ namespace OctreeSplatting {
                             stackTop->X = x;
                             stackTop->Y = y;
                             stackTop->Z = current.Z + (delta.Z >> current.Level);
-                            stackTop->Address = node.Address + octant;
+                            stackTop->Address = nodeAddress + octant;
                             stackTop->Level = nextLevel;
                         }
                         

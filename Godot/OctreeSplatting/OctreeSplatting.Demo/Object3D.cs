@@ -5,7 +5,7 @@ using System.Numerics;
 
 namespace OctreeSplatting.Demo {
     public class Object3D {
-        public OctreeNode[] Octree;
+        public Octree Octree;
         public readonly Vector3[] Cage;
         
         public readonly ProjectedVertex[] ProjectedCage;
@@ -62,7 +62,7 @@ namespace OctreeSplatting.Demo {
             }
         }
         
-        public Object3D(OctreeNode[] octree = null) {
+        public Object3D(Octree octree = null) {
             Octree = octree;
             Cage = new Vector3[8];
             ProjectedCage = new ProjectedVertex[8];

@@ -6,7 +6,7 @@ using System.Numerics;
 namespace OctreeSplatting {
     public struct InstanceInfo {
         public Matrix4x4 Matrix;
-        public OctreeNode[] Octree;
+        public Octree Octree;
         public uint RootAddress;
     }
 }
