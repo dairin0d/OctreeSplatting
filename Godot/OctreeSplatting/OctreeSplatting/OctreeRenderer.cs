@@ -735,6 +735,8 @@ namespace OctreeSplatting {
                             Timing.Map8Pre += time2 - time;
                             #endif
                             
+                            var useSimple = (current.MaxSize < MapThreshold8);
+                            
                             int my, mx;
                             for (my = mapStartY, f.Y = current.MinY; f.Y <= current.MaxY; f.Y++, my += SubpixelSize) {
                                 var maskY = MapY8[my >> mapShift] & mask8;
@@ -759,10 +761,9 @@ namespace OctreeSplatting {
                                         var octant8 = (fullQueue >> (queueItem8 << 2)) & 7;
                                         
                                         f.Z = current.Z + (Deltas[octant8].Z >> current.Level);
-                                        // f.Address = node.Address + octant8;
                                         
                                         var octantMask = Octree[node.Address + octant8].Mask;
-                                        if (octantMask == 0) {
+                                        if ((octantMask == 0) | useSimple) {
                                             f.Address = node.Address + octant8;
                                         } else {
                                             var address = Octree[node.Address + octant8].Address;
