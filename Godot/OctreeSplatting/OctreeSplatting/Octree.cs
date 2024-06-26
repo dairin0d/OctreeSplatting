@@ -10,19 +10,44 @@ namespace OctreeSplatting {
             public Color24* Data;
         }
         
-        public OctreeNode[] Nodes;
-        public byte[] Buffer;
-        public int AddrCount;
-        public int MaskCount;
-        public int DataCount;
+        public readonly int NodeCount;
+        public readonly OctreeNode[] Nodes;
+        public readonly byte[] Buffer;
+        public int AddrSize;
+        public int MaskSize;
+        public int DataSize;
         
         private bool hasPointers;
-        private Pointers pointers;
+        public Pointers pointers;
         private UnsafeRef nodesRef;
         private UnsafeRef bufferRef;
         
         public Octree(OctreeNode[] nodes) {
             Nodes = nodes;
+            
+            NodeCount = Nodes.Length;
+            AddrSize = NodeCount * 4;
+            MaskSize = NodeCount;
+            DataSize = NodeCount * 3;
+            
+            MaskSize = (MaskSize + 3) & ~3;
+            DataSize = (DataSize + 3) & ~3;
+            
+            Buffer = new byte[AddrSize + MaskSize + DataSize];
+            
+            MakeBuffer();
+        }
+        
+        private unsafe void MakeBuffer() {
+            GetPointers();
+            
+            for (int i = 0; i < NodeCount; i++) {
+                pointers.Addr[i] = pointers.Node[i].Address;
+                pointers.Mask[i] = pointers.Node[i].Mask;
+                pointers.Data[i] = pointers.Node[i].Data;
+            }
+            
+            FreePointers();
         }
         
         public unsafe uint GetAddress(uint address) {
@@ -44,8 +69,8 @@ namespace OctreeSplatting {
                 };
                 if (Buffer != null) {
                     pointers.Addr = (uint*)bufferRef;
-                    pointers.Mask = ((byte*)pointers.Addr) + AddrCount*4;
-                    pointers.Data = (Color24*)(pointers.Mask + MaskCount);
+                    pointers.Mask = ((byte*)pointers.Addr) + AddrSize;
+                    pointers.Data = (Color24*)(pointers.Mask + MaskSize);
                 }
                 hasPointers = true;
             }

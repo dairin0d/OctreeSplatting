@@ -178,8 +178,16 @@ namespace OctreeSplatting {
 						if (instance < instanceCount) {
 							var instanceInfo = instanceInfos[instance];
 							var address = buffers.Address[dataIndex];
-							if (address < instanceInfo.Octree.Nodes.Length) {
-								color.RGB = instanceInfo.Octree.Nodes[address].Data;
+							// if (address < instanceInfo.Octree.Nodes.Length) {
+							// 	color.RGB = instanceInfo.Octree.Nodes[address].Data;
+							// 	color.A = 255;
+							// }
+							// if (address < instanceInfo.Octree.NodeCount) {
+							// 	color.RGB = instanceInfo.Octree.pointers.Node[address].Data;
+							// 	color.A = 255;
+							// }
+							if (address < instanceInfo.Octree.NodeCount) {
+								color.RGB = instanceInfo.Octree.pointers.Data[address];
 								color.A = 255;
 							}
 						}
