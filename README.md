@@ -3,6 +3,8 @@ A demo of CPU octree splatting algorithm
 
 The overview / explanation of the used techniques is in the [Notes/Overview.md](Notes/Overview.md) file.
 
+***2024 update:*** I also made a C library based on these (and some new) ideas, take a look at the [Discrete Mirage](https://github.com/dairin0d/discrete-mirage) project if you're interested :-)
+
 A short video demonstration of the main features:
 
 * https://odysee.com/@dairin0d:c/cpu-octree-splatting:9
